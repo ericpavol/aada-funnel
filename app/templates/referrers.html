@@ -1,0 +1,224 @@
+{% extends "base.html" %}
+{% block title %}Ping referrers — AADA{% endblock %}
+
+{% block body %}
+
+{% if not has_refs %}
+  <div class="card empty">
+    <div class="eyebrow">Third export</div>
+    <h1 class="display">No <span class="serif-it">ping log</span> loaded yet</h1>
+    <p>This tab reads Slate's native <b>referrer ping log</b> — one row per page
+       view, with the referring URL. It catches traffic the UTM feed can't see:
+       email opens via the Gmail app, Zoom sessions, AI referrals and partner sites.</p>
+    <p>Upload a <code>Referral Data …xlsx</code> export and pick
+       <b>Referrer ping log</b> as the type.</p>
+    <a class="btn" href="/uploads?program={{ program.key }}">Go to uploads →</a>
+  </div>
+{% else %}
+
+{% set stages = program.stage_keys[1:] %}
+
+{# ---------- headline ---------- #}
+<section class="card">
+  <div class="herowrap">
+    <div class="hero">
+      <div class="eyebrow">Slate native ping log</div>
+      <h1 class="display" style="margin-bottom:14px">
+        Where they came <span class="serif-it">from</span>
+      </h1>
+      <div class="figure">{{ summary.pings|num }}</div>
+      <div class="figure-unit">page views · {{ summary.people|num }} people</div>
+      <p class="herometa">A different grain from the funnel tables: one row per
+        page view, keyed on the person rather than an application. These figures
+        never mix into the channel numbers.</p>
+    </div>
+
+    <div class="steps">
+      <div class="step">
+        <div class="step-name">Matched to {{ program.label }}</div>
+        <div class="rail"><i style="width:{{ ((summary.matched / program_total * 100) if program_total else 0)|round(2) }}%"></i></div>
+        <div class="step-val">
+          <span class="step-n">{{ summary.matched|num }}</span>
+          <span class="step-pct">of {{ program_total|num }}</span>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-name">External referrer</div>
+        <div class="rail"><i style="width:{{ ((summary.external / summary.pings * 100) if summary.pings else 0)|round(2) }}%"></i></div>
+        <div class="step-val">
+          <span class="step-n">{{ summary.external|num }}</span>
+          <span class="step-pct">{{ (summary.external / summary.pings if summary.pings else 0)|pct }}</span>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-name" title="External arrivals carrying no UTM — traffic the Ping Data export cannot attribute at all">
+          External &amp; untagged
+        </div>
+        <div class="rail"><i style="width:{{ ((summary.untagged_external / summary.external * 100) if summary.external else 0)|round(2) }}%"></i></div>
+        <div class="step-val">
+          <span class="step-n">{{ summary.untagged_external|num }}</span>
+          <span class="step-pct">{{ (summary.untagged_external / summary.external if summary.external else 0)|pct }} of external ·
+            {{ summary.untagged_external_people|num }} people</span>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-name">UTM Term present</div>
+        <div class="rail"><i style="width:{{ ((summary.with_term / summary.pings * 100) if summary.pings else 0)|round(2) }}%"></i></div>
+        <div class="step-val">
+          <span class="step-n">{{ summary.with_term|num }}</span>
+          <span class="step-pct">{{ (summary.with_term / summary.pings if summary.pings else 0)|pct }}</span>
+        </div>
+      </div>
+      {% if summary.first_ts %}
+        <div class="step">
+          <div class="step-name">Span</div>
+          <div class="rail"><i style="width:100%"></i></div>
+          <div class="step-val">
+            <span class="step-pct">{{ summary.first_ts[:10] }} → {{ summary.last_ts[:10] }}</span>
+          </div>
+        </div>
+      {% endif %}
+    </div>
+  </div>
+</section>
+
+{# ---------- top referrers ---------- #}
+<details class="card fold" data-fold="referrers" open>
+  <summary>
+    <span class="fold-chev">▶</span>
+    <span class="fold-title">
+      <span class="eyebrow">Ping log · {{ ref_scopes[breakdown.scope] }}</span>
+      <span class="display">Top Slate native ping referrers</span>
+    </span>
+    <span class="fold-hint fold-hint-open">{{ breakdown.distinct|num }} distinct · click to collapse</span>
+    <span class="fold-hint fold-hint-closed">{{ breakdown.distinct|num }} distinct · click to expand</span>
+  </summary>
+
+  <div class="fold-body">
+    <div class="foldnote">
+      <div class="tabsm" style="margin-bottom:8px">
+        {% for k, lbl in ref_groups.items() %}
+          <a class="{{ 'on' if k == breakdown.group else '' }}"
+             href="/referrers?{{ qs(filters, group=k, scope=breakdown.scope, limit=limit) }}">{{ lbl }}</a>
+        {% endfor %}
+      </div>
+      <div class="tabsm" style="margin-bottom:8px">
+        {% for k, lbl in ref_scopes.items() %}
+          <a class="{{ 'on' if k == breakdown.scope else '' }}" title="{{ lbl }}"
+             href="/referrers?{{ qs(filters, group=breakdown.group, scope=k, limit=limit) }}">{{ k }}</a>
+        {% endfor %}
+      </div>
+      <div class="tabsm" style="margin-bottom:8px">
+        {% for n in [20, 40, 100, 200] %}
+          <a class="{{ 'on' if n == limit else '' }}"
+             href="/referrers?{{ qs(filters, group=breakdown.group, scope=breakdown.scope, limit=n) }}">top {{ n }}</a>
+        {% endfor %}
+      </div>
+
+      <div class="note accent"><b>Why this matters.</b> A referrer domain is recorded
+        even when there is no UTM at all, so this is the only view that sees email
+        opens through the Gmail app, Zoom sessions, AI assistants and partner sites.
+        The <b>untagged</b> scope is that traffic on its own.</div>
+      <div class="note warn" style="margin-bottom:0">
+        <div class="note-row">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+               stroke-width="2" stroke-linecap="round"><circle cx="9" cy="9" r="5.5"/>
+            <circle cx="15" cy="15" r="5.5"/></svg>
+          <span>Any-touch, like the channel tables: a person is counted under every
+            referrer they arrived through, so rows overlap and must not be summed.
+            Percentages are against <b>Matched</b> — the applicants in the current
+            program and filter that this referrer touched.</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="tablewrap">
+    <table>
+      <thead>
+        <tr>
+          <th class="chan" rowspan="2">{{ ref_groups[breakdown.group] }}</th>
+          <th rowspan="2">Page<br><span class="hint">views</span></th>
+          <th rowspan="2">People</th>
+          <th rowspan="2">Untagged<br><span class="hint">views</span></th>
+          <th rowspan="2">Matched</th>
+          {% for k in stages %}
+            <th class="grp" colspan="2">{{ program.stage_labels[k] }}</th>
+          {% endfor %}
+        </tr>
+        <tr>
+          {% for k in stages %}
+            <th class="grp">#</th><th>% of matched</th>
+          {% endfor %}
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in breakdown.rows %}
+          <tr class="{{ 'muted' if row.internal else '' }}">
+            <td class="chan">
+              <code>{{ row.label }}</code>
+              {% if row.internal %}<span class="hint"> · own site</span>{% endif %}
+            </td>
+            <td>{{ row.pings|num }}</td>
+            <td>{{ row.people|num }}</td>
+            <td class="pct">{{ row.untagged_pings|num }}</td>
+            <td>{{ row.matched|num }}</td>
+            {% for k in stages %}
+              <td>{{ row.counts[k]|num }}</td>
+              <td class="pct">{{ row.within_pct[k]|pct }}</td>
+            {% endfor %}
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    </div>
+
+    {% if breakdown.truncated %}
+      <div class="hint" style="padding:11px 20px">{{ breakdown.truncated|num }} more
+        — raise the limit above.</div>
+    {% endif %}
+  </div>
+</details>
+
+{# ---------- UTM Term ---------- #}
+<details class="card fold" data-fold="refterms">
+  <summary>
+    <span class="fold-chev">▶</span>
+    <span class="fold-title">
+      <span class="eyebrow">Only available here</span>
+      <span class="display">UTM Term values</span>
+    </span>
+    <span class="fold-hint fold-hint-open">click to collapse</span>
+    <span class="fold-hint fold-hint-closed">{{ terms|length }} shown · click to expand</span>
+  </summary>
+  <div class="fold-body">
+    <div class="foldnote">
+      <div class="note">UTM Term appears in <b>this export only</b> — the Ping Data
+        exports carry Source, Medium, Campaign and Content but no Term. Be warned
+        that most values are opaque <b>Meta ad-set IDs</b> rather than keywords, so
+        this is more useful for joining to Ads reporting than for reading directly.</div>
+    </div>
+    {% if terms %}
+      <div class="tablewrap">
+      <table>
+        <thead><tr>
+          <th class="chan">UTM Term</th><th>Page views</th><th>People</th>
+        </tr></thead>
+        <tbody>
+          {% for t in terms %}
+            <tr>
+              <td class="chan"><code>{{ t.term }}</code></td>
+              <td>{{ t.pings|num }}</td>
+              <td>{{ t.people|num }}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      </div>
+    {% else %}
+      <div class="hint" style="padding:0 20px 18px">No pings carry a UTM Term.</div>
+    {% endif %}
+  </div>
+</details>
+
+{% endif %}
+{% endblock %}

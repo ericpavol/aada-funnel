@@ -1,0 +1,99 @@
+{# Macros shared by Overview and Cost. Kept in one file so the series
+   picker and the tip affordance cannot drift between the two pages. #}
+{% macro tip(items) %}
+{# One hover affordance per section. Stacked note boxes pushed the actual charts
+   below the fold; the caveats still have to be reachable, so they live behind a
+   single icon instead of four boxes. Hover or keyboard focus opens it. #}
+<span class="tip" tabindex="0" role="note" aria-label="Notes and caveats">i<span class="tip-pop">
+  {%- for it in items %}<p>{{ it|safe }}</p>{% endfor -%}
+</span></span>
+{% endmacro %}
+
+{% macro series_tree(key, tree, selected, all_names, anchor, dropped=[]) %}
+{# One control for parents AND sub-sources, shared by the timeline and the
+   stage-presence chart.
+
+   Two things worth preserving:
+   * Every toggle link is built from `selected` — the ACTUAL current selection.
+     Deriving it from "param absent == everything" made the first click switch on
+     all twenty sub-sources, because the real default is parents-only.
+   * A ticked parent means the WHOLE channel. It overlaps its own sub-sources,
+     exactly as every any-touch figure in this app already does. #}
+{% set shown = selected|length %}
+<div class="stree-wrap" data-picker="{{ key }}">
+<details class="stree-fold" data-fold="tree-{{ key }}">
+  <summary class="stree-sum">
+    <span class="scv">▶</span>
+    <span class="eyebrow">Series</span>
+    <span class="stree-sumtxt">
+      {%- if shown == 0 -%}
+        <b>none shown</b> — pick something
+      {%- else -%}
+        <b>{{ shown }}</b> of {{ all_names|length }} shown ·
+        {{ selected[:2]|join(', ') }}{% if shown > 2 %} +{{ shown - 2 }}{% endif %}
+      {%- endif -%}
+    </span>
+    <span class="stree-edit">Edit</span>
+  </summary>
+
+  <div class="stree-body">
+    <div class="stree-hdr">
+      <span class="hint">Highlighted is shown. A ticked category covers the whole
+        channel, including its sub-sources.</span>
+      <span class="stree-acts">
+        <a href="?{{ qs_pick_all(request, key) }}#{{ anchor }}" data-act="default">Categories only</a>
+        <a href="?{{ qs_pick_every(request, key, all_names) }}#{{ anchor }}" data-act="every">Select all</a>
+        <a href="?{{ qs_pick_none(request, key) }}#{{ anchor }}" data-act="none">Clear all</a>
+      </span>
+    </div>
+    <div class="stree">
+      {% for p in tree %}
+        {% set psel = p.name in selected %}
+        {% set kidsel = p.subs|selectattr('name','in',selected)|list %}
+        <div class="sgroupwrap">
+        {% if p.subs %}
+          <details class="sgroup"{% if kidsel %} open{% endif %}>
+            <summary class="srow{{ ' on' if psel else '' }}" data-row="{{ p.name }}">
+              <span class="scv">▶</span>
+              <a class="sbox" href="?{{ qs_pick(request, key, p.name, all_names, selected) }}#{{ anchor }}" data-pick="{{ p.name }}"
+                 aria-label="{{ 'Hide' if psel else 'Show' }} {{ p.name }}"><svg viewBox="0 0 24 24"
+                 fill="none" stroke="currentColor" stroke-width="3.4" stroke-linecap="round"><path d="M20 6 9 17l-5-5"/></svg></a>
+              <a class="snm" href="?{{ qs_pick(request, key, p.name, all_names, selected) }}#{{ anchor }}" data-pick="{{ p.name }}">{{ p.name }}</a>
+              <span class="sn">{{ p.n|num }}</span>
+              <a class="only" href="?{{ qs_only(request, key, p.name) }}#{{ anchor }}" data-pick="{{ p.name }}" data-only
+                 title="Show only {{ p.name }}">only</a>
+            </summary>
+            {% for k in p.subs %}
+              {% set ksel = k.name in selected %}
+              <div class="srow sub{{ ' on' if ksel else '' }}" data-row="{{ k.name }}">
+                <a class="sbox" href="?{{ qs_pick(request, key, k.name, all_names, selected) }}#{{ anchor }}" data-pick="{{ k.name }}"
+                   aria-label="{{ 'Hide' if ksel else 'Show' }} {{ k.name }}"><svg viewBox="0 0 24 24"
+                   fill="none" stroke="currentColor" stroke-width="3.4" stroke-linecap="round"><path d="M20 6 9 17l-5-5"/></svg></a>
+                <a class="snm" href="?{{ qs_pick(request, key, k.name, all_names, selected) }}#{{ anchor }}" data-pick="{{ k.name }}">{{ k.label }}</a>
+                <span class="sn">{{ k.n|num }}</span>
+                <a class="only" href="?{{ qs_only(request, key, k.name) }}#{{ anchor }}" data-pick="{{ k.name }}" data-only
+                   title="Show only {{ k.name }}">only</a>
+              </div>
+            {% endfor %}
+          </details>
+        {% else %}
+          <div class="srow{{ ' on' if psel else '' }}" data-row="{{ p.name }}">
+            <span class="scv sflat"></span>
+            <a class="sbox" href="?{{ qs_pick(request, key, p.name, all_names, selected) }}#{{ anchor }}" data-pick="{{ p.name }}"
+               aria-label="{{ 'Hide' if psel else 'Show' }} {{ p.name }}"><svg viewBox="0 0 24 24"
+               fill="none" stroke="currentColor" stroke-width="3.4" stroke-linecap="round"><path d="M20 6 9 17l-5-5"/></svg></a>
+            <a class="snm" href="?{{ qs_pick(request, key, p.name, all_names, selected) }}#{{ anchor }}" data-pick="{{ p.name }}">{{ p.name }}</a>
+            <span class="sn">{{ p.n|num }}</span>
+            <a class="only" href="?{{ qs_only(request, key, p.name) }}#{{ anchor }}" data-pick="{{ p.name }}" data-only
+               title="Show only {{ p.name }}">only</a>
+          </div>
+        {% endif %}
+        </div>
+      {% endfor %}
+    </div>
+  </div>
+</details>
+<div class="note warn stree-drop" data-dropped{{ '' if dropped else ' hidden' }}>{% if dropped %}{{ dropped|length }} selected but not drawn ({{ dropped|join(', ') }}). The palette has eight slots and a repeated colour would read as the same series.{% endif %}</div>
+</div>
+{% endmacro %}
+

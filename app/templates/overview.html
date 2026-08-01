@@ -1,0 +1,481 @@
+{% extends "base.html" %}
+{% block title %}{{ program.label }} funnel — AADA{% endblock %}
+
+{% from "_macros.html" import tip, series_tree with context %}
+
+{% macro stage_pick(param, current, anchor) %}
+{# Per-card target stage — this control drives ONLY the chart it sits in.
+   "Started" is not offered: every applicant has started, so conversion to it is
+   100% for every channel and the quality chart would go flat. #}
+<div class="stagebar" data-stagepick="{{ param }}">
+  <span class="eyebrow">Measured against</span>
+  <div class="tabsm">
+    {% for k in stage_opts %}
+      <a class="{{ 'on' if k == current else '' }}" data-stage="{{ k }}"
+         href="?{{ qs_set(request, param, none if k == program.channel_stage else k) }}#{{ anchor }}"
+         >{{ program.stage_labels[k] }}</a>
+    {% endfor %}
+  </div>
+</div>
+{% endmacro %}
+
+{% macro channel_table(matrix, mode) %}
+{# 'within' = channel QUALITY. Started columns are omitted there: every applicant
+   has started, so Started # always equals Touched and Started % is always 100%.
+   'penetration' = channel PRESENCE, where Started IS meaningful (the channel's
+   share of everyone who started), so it stays. #}
+{% set stages = program.stage_keys[1:] if mode == 'within' else program.stage_keys %}
+<div class="tablewrap">
+<table>
+  <thead>
+    <tr>
+      <th class="chan" rowspan="2">Channel</th>
+      <th rowspan="2">Touched</th>
+      {% for k in stages %}
+        <th class="grp" colspan="2">{{ program.stage_labels[k] }}</th>
+      {% endfor %}
+    </tr>
+    <tr>
+      {% for k in stages %}
+        <th class="grp">#</th>
+        <th>{{ '% of chan' if mode == 'within' else '% of stage' }}</th>
+      {% endfor %}
+    </tr>
+  </thead>
+  <tbody>
+    <tr class="baseline">
+      <td class="chan">All applicants</td>
+      <td>{{ matrix.population|num }}</td>
+      {% for k in stages %}
+        <td>{{ matrix.totals[k]|num }}</td>
+        <td class="pct">
+          {% if mode == 'within' %}
+            {{ (matrix.totals[k] / matrix.totals['started'] if matrix.totals['started'] else 0)|pct }}
+          {% else %}100.0%{% endif %}
+        </td>
+      {% endfor %}
+    </tr>
+    {% for row in matrix.rows %}
+      <tr class="{{ 'parent' if row.is_parent else 'sub' }}{{ ' muted' if row.channel == NO_UTM else '' }}">
+        <td class="chan">
+          {% set ent = row.channel if row.is_parent else (row.channel ~ ' › ' ~ row.sub_source) %}
+          {% if ent in series_index %}
+            <span class="swatchdot" style="background:var(--s{{ series_index[ent] + 1 }})"></span>
+          {% endif %}
+          {{ row.channel if row.is_parent else row.sub_source }}
+        </td>
+        <td>{{ row.n|num }}</td>
+        {% for k in stages %}
+          <td>{{ row.counts[k]|num }}</td>
+          <td class="pct">{{ (row.within_pct[k] if mode == 'within' else row.penetration_pct[k])|pct }}</td>
+        {% endfor %}
+      </tr>
+    {% endfor %}
+  </tbody>
+</table>
+</div>
+{% endmacro %}
+
+{% block body %}
+
+{% if not has_data %}
+  <div class="card empty">
+    <h1 class="display">Nothing here <span class="serif-it">yet</span></h1>
+    <p>Upload a Slate <b>Ping Data</b> export for {{ program.label }}. Uploads
+       accumulate and overlapping rows de-duplicate, so you can keep adding
+       exports over time.</p>
+    <a class="btn" href="/uploads?program={{ program.key }}">Upload an export →</a>
+  </div>
+{% else %}
+
+{# ---------- 1. OVERALL FUNNEL — channel-independent, always first ---------- #}
+<section class="card">
+  <div class="herowrap">
+    <div class="hero">
+      <div class="eyebrow">Overall funnel</div>
+      <h1 class="display" style="margin-bottom:14px">
+        Where everyone <span class="serif-it">actually</span> is
+      </h1>
+      <div class="figure">{{ overall.population|num }}</div>
+      <div class="figure-unit">applicants in scope{% if filters.active %} · filtered{% endif %}</div>
+      <p class="herometa">No marketing attribution in this view — just the raw
+        progression. Each step is measured against the stage before it.</p>
+      {% if 'enrolled' in program.stage_keys %}
+        {# A DIV, not a <p>: tip() emits <p> elements, and a <p> inside a <p>
+           makes the parser close the outer one — which silently hoisted the
+           whole popover into the page as visible body text. #}
+        <div class="herometa">{{ tip(['<b>Enrolled</b> is read from Most Recent Decision
+          until Slate sends a dedicated column; the app switches to the column
+          automatically once one appears in an export.',
+          'It is thinly populated so far — in the July 2026 export only
+           ' ~ overall.counts.enrolled|num ~ ' people, all one term, because later
+           cohorts have not matriculated yet. Read it as partial, not as a
+           conversion rate.']) }} <span class="hint">About the Enrolled
+          step</span></div>
+      {% endif %}
+    </div>
+
+    <div class="steps">
+      {% for s in overall.steps %}
+        <div class="step">
+          <div class="step-name">
+            <span class="idx">{{ '%02d'|format(loop.index) }}</span>
+            {{ s.label }}
+          </div>
+          <div class="rail">
+            <i style="width:{{ (s.pct_of_started * 100)|round(2) }}%;animation-delay:{{ loop.index0 * 60 }}ms"></i>
+          </div>
+          <div class="step-val">
+            {% if not loop.first %}
+              <span class="delta down" title="lost since {{ s.prev_label }}">
+                ↓{{ s.drop_from_prev|num }}
+              </span>
+            {% endif %}
+            <span class="step-n">{{ s.n|num }}</span>
+            <span class="step-pct">{{ s.pct_of_started|pct }}</span>
+          </div>
+        </div>
+      {% endfor %}
+    </div>
+  </div>
+</section>
+
+{# ---------- 2. COMPARISON ---------- #}
+<div class="grid2">
+  <section class="card" id="convert">
+    <div class="cardhead">
+      <div class="grow">
+        <div class="eyebrow">Channel quality</div>
+        <h2 class="display">Which channels <span class="serif-it">convert</span>
+          to <span data-stagetext="cvs">{{ comparison.final_label }}</span>{{ tip([
+          'Of the people who touched a channel, the share that reached
+           <b data-stagetext="cvs">' ~ comparison.final_label ~
+          '</b>. Sorted best first; the dashed line is everyone&#39;s rate to the same
+           stage, so it moves with the selection. This card&#39;s stage is its own —
+           it does not change the chart beside it.',
+          'Channels under ' ~ comparison.min_n ~ ' people are hidden so a handful of applicants
+           cannot top the chart. Click a category to expand its sub-sources.',
+        ]) }}</h2>
+      </div>
+    </div>
+    <div class="sub" style="margin-bottom:10px">Share of each channel’s people
+      reaching <b data-stagetext="cvs">{{ comparison.final_label }}</b> · click a
+      category (▸) to expand its sub-sources</div>
+    {{ stage_pick('cvs', cmp_stage, 'convert') }}
+    <div class="chartbox"><canvas id="cmpChart"></canvas></div>
+  </section>
+
+  <section class="card" id="makeup">
+    <div class="cardhead">
+      <div class="grow">
+        <div class="eyebrow">Channel presence</div>
+        <h2 class="display">Which channels <span class="serif-it">make up</span>
+          <span data-stagetext="mvs">{{ makeup.final_label }}</span>{{ tip([
+          'The mirror of the chart on the left: that one is channel <b>quality</b>, this is
+           channel <b>presence</b>. Sorted biggest first.',
+          'Any-touch, so these bars <b>overlap and total
+           <span data-stagesum="mvs">' ~ makeup.sum_share|pct ~ '</span></b>, not
+           100% — most people who reached
+           <span data-stagetext="mvs">' ~ makeup.final_label ~ '</span> touched several
+           channels. “' ~ NO_UTM ~ '” is kept in deliberately.',
+          caveat_causation,
+        ]) }}</h2>
+      </div>
+    </div>
+    <div class="sub" style="margin-bottom:10px">Of the
+      <b data-stagetotal="mvs">{{ makeup.final_total|num }}</b> who reached
+      <b data-stagetext="mvs">{{ makeup.final_label }}</b> ·
+      click a category (▸) to expand</div>
+    {{ stage_pick('mvs', mk_stage, 'makeup') }}
+    <div class="chartbox"><canvas id="mkChart"></canvas></div>
+  </section>
+</div>
+
+{# Cost sits beside First-touch mix on purpose: that chart says which channel
+   FOUND each person, and this one says what finding them cost. Same denominator
+   (first touch), read together. #}
+<div class="grid2">
+<section class="card costcard" id="cost">
+  <div class="cardhead">
+    <div class="grow">
+      <div class="eyebrow">Media cost · paid only</div>
+      <h2 class="display">What each stage <span class="serif-it">costs</span>{{ tip([
+        'Spend divided by how many people reached the selected stage, per channel — the
+         mirror of “Which channels convert”. That one asks how well a channel converts;
+         this asks what the conversions cost.',
+        'Denominators are <b>first touch</b>: each person is credited to exactly one
+         channel, so the rows sum to the blended figure above. An any-touch version would
+         charge the same person to both Google and Meta.',
+        'Paid channels only. Organic, email and direct mail carry real cost that no ad
+         platform exports — they are absent here rather than shown as zero.',
+        'Spend covers whole months, so a date filter narrower than a month still counts
+         that month in full.',
+      ]) }}</h2>
+    </div>
+  </div>
+
+  {% if not cost.has_spend %}
+    <p class="sub">No media spend loaded. Add a Google Ads or Meta export on the
+      <a href="/uploads?{{ qs(filters) }}">Data</a> tab to see cost per stage by channel.</p>
+  {% else %}
+    {# Every stage, including Started: cost per started app is the headline number
+       here, not the degenerate 100% row it would be on the quality chart. #}
+    <div class="stagebar" data-stagepick="cst" data-costcard="1">
+      <span class="eyebrow">Cost per</span>
+      <div class="tabsm">
+        {% for k in cost_stage_opts %}
+          <a class="{{ 'on' if k == cost_stage else '' }}" data-stage="{{ k }}"
+             href="?{{ qs_set(request, 'cst', none if k == 'started' else k) }}#cost"
+             >{{ program.stage_labels[k] }}</a>
+        {% endfor %}
+      </div>
+    </div>
+
+    <div class="stagebar attrbar" data-attrpick="1">
+      <span class="eyebrow">Credit to</span>
+      <div class="tabsm">
+        {% for a in attributions %}
+          <a class="{{ 'on' if a.key == cost_attr else '' }}" data-attr="{{ a.key }}"
+             href="?{{ qs_set(request, 'ca', none if a.key == 'first' else a.key) }}#cost"
+             title="{{ a.note }}">{{ a.label }}</a>
+        {% endfor %}
+      </div>
+      <span class="hint" data-attrnote>{{ (attributions | selectattr('key','equalto',cost_attr) | first).note }}</span>
+    </div>
+
+    <div class="costfig">
+      <div><span class="k">Paid media</span>
+        <span class="v">${{ '{:,.0f}'.format(cost.total_cost) }}</span></div>
+      <div><span class="k">Per <span data-coststagelow>{{ cost.stage_label|lower }}</span></span>
+        <span class="v" data-costper>{% if cost.blended_per_stage %}${{ '{:,.0f}'.format(cost.blended_per_stage) }}{% else %}—{% endif %}</span></div>
+      <div><span class="k" data-costreach>Reached it</span>
+        <span class="v" data-costn>{{ cost.stage_total|num }}
+          <small>from paid</small></span></div>
+    </div>
+
+    <div class="chartbox" style="padding:2px 20px 16px"><canvas id="costChart"></canvas></div>
+    <p class="sub" style="padding:0 20px 2px;margin:0">
+      <a href="/cost?{{ qs(filters) }}">Full cost breakdown →</a></p>
+  {% endif %}
+</section>
+
+<details class="card fold" data-fold="firsttouch" open>
+  <summary>
+    <span class="fold-chev">▶</span>
+    <span class="fold-title">
+      <span class="eyebrow">Acquisition</span>
+      <span class="display">First-touch <span class="serif-it">mix</span></span>
+    </span>
+    {{ tip([
+      'Each person counted once, on their <b>first</b> ping only — so unlike the two charts
+       above and the tables below, these shares <b>do</b> add to 100%.',
+      'This is the cleaner read on what actually brings people in: any-touch views credit
+       every channel someone passed through, first-touch credits only the one that found them.',
+    ]) }}
+    <span class="fold-hint fold-hint-open">click to collapse</span>
+    <span class="fold-hint fold-hint-closed">click to expand</span>
+  </summary>
+  <div class="fold-body">
+    <div class="chartbox" style="padding:16px 20px 18px"><canvas id="ftChart"></canvas></div>
+  </div>
+</details>
+</div>
+
+{# ---------- 2b. TAG TIMELINE ---------- #}
+<details class="card fold" id="timeline" data-fold="timeline" open>
+  <summary>
+    <span class="fold-chev">▶</span>
+    <span class="fold-title">
+      <span class="eyebrow">Timing · fiscal year runs 1 Sep → 31 Aug</span>
+      <span class="display">When tags <span class="serif-it">land</span></span>
+    </span>
+    {{ tip([
+      ('<b>Tag events</b> counts every touch: one person clicking the same ad five times in
+        October is <b>5</b> — activity or spend volume. <b>Distinct people</b> counts each
+        person once <i>per bucket</i>, so the points do <b>not</b> add up to a headcount:
+        the buckets sum to ' ~ timeline.grand_total|num ~ ' but there are only ' ~
+        timeline.people_unique|num ~ ' actual people.'),
+      ('Dated by the <b>tag\'s own timestamp</b> where it has one — 98.5% of Full-Time and
+        99.6% of Summer tags do. The remaining ' ~ timeline.approx|num ~ ' in this view fall
+        back to the applicant\'s <b>app start date</b>.'),
+      ('Colour is the category; the newest fiscal year is solid, earlier years dashed and
+        dimmed. Buckets are positions <i>within</i> the fiscal year, which is what lets
+        years overlay.'),
+    ] + ([
+      ('<b>Grey band = applications started</b>, on the <b>right-hand axis</b>, scaled
+        independently — tags outrun starts about 6:1, so on a shared axis the band was a
+        sliver. Compare <b>shape and timing</b>, not heights. ' ~ tl_started.total|num ~
+        ' started in view, peaking at ' ~ tl_started.peak|num ~ ' per ' ~ timeline.bucket ~ '.')
+    ] if (tl_apps and tl_started) else [])) }}
+    <span class="fold-hint fold-hint-open">{{ timeline.headline|num }} {{ timeline.headline_unit }} · click to collapse</span>
+    <span class="fold-hint fold-hint-closed">{{ timeline.headline|num }} {{ timeline.headline_unit }} · click to expand</span>
+  </summary>
+
+  <div class="fold-body">
+    <div class="foldnote">
+      <div class="tlbar">
+        <div class="tlgroup">
+          <span class="eyebrow">Bucket</span>
+          <div class="tabsm">
+            {% for k, lbl in tl_buckets.items() %}
+              <a class="{{ 'on' if k == timeline.bucket else '' }}"
+                 href="?{{ qs_with(request, tl_bucket=k) }}#timeline">{{ lbl }}</a>
+            {% endfor %}
+          </div>
+        </div>
+        <div class="tlgroup">
+          <span class="eyebrow">Count</span>
+          <div class="tabsm">
+            {% for k, lbl in tl_measures.items() %}
+              <a class="{{ 'on' if k == timeline.measure else '' }}"
+                 title="{{ 'Every tag, so one person clicking five times counts five times — measures activity/volume' if k == 'tags' else 'Each person once per bucket — measures reach' }}"
+                 href="?{{ qs_with(request, tl_measure=k) }}#timeline">{{ lbl }}</a>
+            {% endfor %}
+          </div>
+        </div>
+        <div class="tlgroup">
+          <span class="eyebrow">Reference</span>
+          <div class="tabsm">
+            <a class="{{ 'on' if tl_apps else '' }}"
+               title="Overlay applications started, on its own right-hand axis"
+               href="?{{ qs_with(request, tl_apps=(None if tl_apps else 1)) }}#timeline">
+              {{ 'Hide' if tl_apps else 'Show' }} started apps
+            </a>
+          </div>
+        </div>
+        <div class="tlgroup">
+          <span class="eyebrow">Fiscal year <span class="hint">(newest is solid)</span></span>
+          <div class="tabsm">
+            {% for y in tl_all_years %}
+              <a class="{{ 'on' if is_picked(request, 'tl_year', y, tl_all_years) else '' }}{{ ' past' if y != timeline.newest else '' }}"
+                 href="?{{ qs_pick(request, 'tl_year', y, tl_all_years) }}#timeline">FY {{ y }}/{{ '%02d'|format((y + 1) % 100) }}</a>
+            {% endfor %}
+          </div>
+        </div>
+      </div>
+
+      <div style="margin-top:11px">
+        {{ series_tree('tl_pick', tl_tree, tl_selected, tl_all, 'timeline', timeline.dropped) }}
+      </div>
+    </div>
+
+    {# Both charts always render; an empty selection draws an empty canvas with
+       its axes, so ticking a box fills it in place instead of swapping the
+       whole block in and out under the user. #}
+    <div class="chartbox tall" style="padding:0 20px 18px">
+      <canvas id="tlChart"></canvas>
+    </div>
+    <div class="hint" data-empty="tl_pick" style="padding:0 20px 20px"
+         {{ '' if not timeline.series else 'hidden' }}>No tags match this selection.</div>
+  </div>
+</details>
+
+
+{# ---------- 3. PENETRATION ---------- #}
+<details class="card fold" id="presence" data-fold="presence" open>
+  <summary>
+    <span class="fold-chev">▶</span>
+    <span class="fold-title">
+      <span class="eyebrow">Channel presence</span>
+      <span class="display">Share of each stage <span class="serif-it">touched</span> by channel</span>
+    </span>
+    {{ tip([
+      caveat_causation,
+      'Any-touch: a person counts in every channel they touched, so the bars within a stage
+       overlap and do not sum to 100%.',
+      'Sub-sources are off by default — switching them all on would blow past the eight-colour
+       palette and bury the parents they belong to. Pick the ones you want.',
+    ]) }}
+    <span class="fold-hint fold-hint-open">{{ chart_penetration.series|length }} shown · click to collapse</span>
+    <span class="fold-hint fold-hint-closed">{{ chart_penetration.series|length }} shown · click to expand</span>
+  </summary>
+
+  <div class="fold-body">
+    <div class="foldnote">
+      {{ series_tree('pen_pick', pen_tree, pen_selected, pen_all, 'presence', chart_penetration.dropped) }}
+    </div>
+
+    <div class="chartbox tall" style="padding:0 20px 18px"><canvas id="penChart"></canvas></div>
+    <div class="note" data-empty="pen_pick" style="margin:0 20px 20px"
+         {{ '' if not chart_penetration.series else 'hidden' }}>Nothing selected —
+      <a href="?{{ qs_pick_all(request, 'pen_pick') }}#presence">reset to the
+        default categories</a>.</div>
+  </div>
+</details>
+
+{# ---------- 4. THE TWO TABLES — collapsible, state remembered ---------- #}
+{% set row_count = any_touch.rows|length %}
+
+<details class="card fold" data-fold="progression" open>
+  <summary>
+    <span class="fold-chev">▶</span>
+    <span class="fold-title">
+      <span class="eyebrow">Table · within-channel %</span>
+      <span class="display">Funnel progression by channel</span>
+    </span>
+    <span class="fold-hint fold-hint-open">{{ row_count }} rows · click to collapse</span>
+    <span class="fold-hint fold-hint-closed">{{ row_count }} rows · click to expand</span>
+  </summary>
+  <div class="fold-body">
+    <div class="foldnote">
+      <div class="note warn" style="margin-top:0">
+        <div class="note-row">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+               stroke-width="2" stroke-linecap="round"><circle cx="9" cy="9" r="5.5"/>
+            <circle cx="15" cy="15" r="5.5"/></svg>
+          <span>{{ caveat_any_touch }}</span>
+        </div>
+      </div>
+    </div>
+    {{ channel_table(any_touch, 'within') }}
+  </div>
+</details>
+
+<details class="card fold" data-fold="makeup" open>
+  <summary>
+    <span class="fold-chev">▶</span>
+    <span class="fold-title">
+      <span class="eyebrow">Table · stage penetration %</span>
+      <span class="display">Funnel makeup by channel</span>
+    </span>
+    <span class="fold-hint fold-hint-open">{{ row_count }} rows · click to collapse</span>
+    <span class="fold-hint fold-hint-closed">{{ row_count }} rows · click to expand</span>
+  </summary>
+  <div class="fold-body">
+    <div class="foldnote">
+      <div class="note warn" style="margin-top:0">
+        <div class="note-row">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+               stroke-width="2" stroke-linecap="round"><circle cx="9" cy="9" r="5.5"/>
+            <circle cx="15" cy="15" r="5.5"/></svg>
+          <span>{{ caveat_any_touch }} {{ caveat_causation }}</span>
+        </div>
+      </div>
+    </div>
+    {{ channel_table(any_touch, 'penetration') }}
+  </div>
+</details>
+
+<script>
+  AADA.comparisonChart({{ chart_comparison|tojson }}, {{ comparison.baseline_rate|tojson }},
+                       {{ comparison.final_label|tojson }});
+  AADA.makeupChart({{ chart_makeup|tojson }}, {{ makeup.final_total|tojson }},
+                   {{ makeup.final_label|tojson }});
+  AADA.mixChart({{ chart_first_touch|tojson }});
+  AADA.penetrationChart({{ chart_penetration|tojson }});
+  {% if timeline.series %}AADA.timelineChart({{ timeline|tojson }},
+      {{ (tl_started or none)|tojson }});{% endif %}
+
+  {# Every entity ships here, not just the eight on screen: ticking a box then
+     re-slices and redraws locally instead of costing a page load. #}
+  AADA.wirePickers({{ tl_payload|tojson }}, {{ (tl_started or none)|tojson }},
+                   {{ pen_payload|tojson }});
+  {% if cost.has_spend %}AADA.costChart({{ cost_payload|tojson }}, {{ cost_stage|tojson }},
+                                       {{ cost_attr|tojson }});{% endif %}
+  AADA.wireStagePicks({{ stage_payload|tojson }},
+                      {"cvs": {{ cmp_stage|tojson }}, "mvs": {{ mk_stage|tojson }}},
+                      {{ program.channel_stage|tojson }});
+</script>
+
+{% endif %}
+{% endblock %}

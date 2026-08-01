@@ -1,0 +1,256 @@
+{% extends "base.html" %}
+{% block title %}Media cost — AADA{% endblock %}
+
+{% from "_macros.html" import tip, series_tree with context %}
+
+{% macro money(v, dp=0) %}{% if v is none %}<span class="dash">—</span>{% else %}${{ '{:,.{}f}'.format(v, dp) }}{% endif %}{% endmacro %}
+
+{% block body %}
+{% if not cost.has_spend %}
+  <section class="card">
+    <div class="cardhead"><div class="grow">
+      <div class="eyebrow">Media cost</div>
+      <h2 class="display">No spend loaded <span class="serif-it">yet</span></h2>
+    </div></div>
+    <p class="sub">Upload a Google Ads campaign report or a Meta Ads raw data report
+      on the <a href="/uploads?{{ qs(filters) }}">Data</a> tab. Include a
+      <b>Month</b> column so cost can follow the date filter and be charted over
+      time.</p>
+  </section>
+{% else %}
+
+{# ---------- headline ---------- #}
+<section class="card">
+  <div class="herowrap">
+    <div class="hero">
+      <div class="eyebrow">Media cost · {{ program.label }}</div>
+      <h1 class="display" style="margin-bottom:14px">
+        What acquisition <span class="serif-it">costs</span>
+      </h1>
+      <div class="figure">{{ money(cost.total_cost) }}</div>
+      <div class="figure-unit">paid media
+        {%- if cost.months %} · {{ cost.months|length }} month{{ '' if cost.months|length == 1 else 's' }}
+        ({{ cost.months[0] }} → {{ cost.months[-1] }}){% endif %}</div>
+      <p class="herometa">Paid channels only. Organic, email, direct mail and
+        referral carry real cost that no ad platform exports — they show a dash
+        here rather than a misleading zero.</p>
+      {% if cost.narrowed %}
+        <div class="note warn" style="margin-top:12px">Your date filter narrowed this
+          to {{ cost.months|length }} of {{ cost.all_months|length }} months. Spend is
+          monthly, so any month your range touches is counted <b>whole</b> — splitting
+          one proportionally would be inventing daily figures.</div>
+      {% endif %}
+    </div>
+
+    <div class="steps">
+      <div class="step">
+        <div class="step-name"><span class="idx">01</span>
+          <span>Cost per started app</span></div>
+        <div class="step-val"><span class="step-n">{{ money(cost.blended_per_start, 2) }}</span></div>
+      </div>
+      <div class="step">
+        <div class="step-name"><span class="idx">02</span>
+          <span>Cost per {{ cost.stage_label|lower }}</span></div>
+        <div class="step-val"><span class="step-n">{{ money(cost.blended_per_stage, 2) }}</span></div>
+      </div>
+      <div class="step">
+        <div class="step-name"><span class="idx">03</span>
+          <span>Started apps from paid</span></div>
+        <div class="step-val"><span class="step-n">{{ cost.total_first|num }}</span></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+{# ---------- the table ---------- #}
+<section class="card" id="table">
+  <div class="cardhead"><div class="grow">
+    <div class="eyebrow">Efficiency</div>
+    <h2 class="display">Cost per <span class="serif-it">outcome</span>{{ tip([
+      '<b>Cost / start</b> uses <b>first touch</b> — each person is credited to exactly
+       one channel, so this column sums to the blended figure above and is the one to
+       quote.',
+      '<b>Cost / assist</b> is the one <b>any-touch</b> column. Those rows overlap by design
+       (a person counts in every channel they touched), so it does <b>not</b> sum — read it
+       row by row only, which is why the total row shows a dash.',
+      'The ' ~ cost.stage_label|lower ~ ' column is first touch as well, so it sums the
+       same way. An any-touch version would count anyone who touched both Google and
+       Meta twice.',
+      'Cost is what the platform charged in the months shown. It is not attributed to the
+       individual people below; nobody can do that without click-level join keys.',
+    ]) }}</h2>
+  </div></div>
+
+  <div class="stagebar" data-stagepick="vs" data-costpick="1">
+    <span class="eyebrow">Deeper outcome</span>
+    <div class="tabsm">
+      {% for k in stage_opts %}
+        <a class="{{ 'on' if k == stage else '' }}" data-stage="{{ k }}"
+           href="?{{ qs_set(request, 'vs', none if k == program.channel_stage else k) }}#table"
+           >{{ program.stage_labels[k] }}</a>
+      {% endfor %}
+    </div>
+  </div>
+
+    <div class="stagebar attrbar" data-attrpick="1">
+      <span class="eyebrow">Credit to</span>
+      <div class="tabsm">
+        {% for a in attributions %}
+          <a class="{{ 'on' if a.key == cost_attr else '' }}" data-attr="{{ a.key }}"
+             href="?{{ qs_set(request, 'ca', none if a.key == 'first' else a.key) }}#table"
+             title="{{ a.note }}">{{ a.label }}</a>
+        {% endfor %}
+      </div>
+      <span class="hint" data-attrnote>{{ (attributions | selectattr('key','equalto',cost_attr) | first).note }}</span>
+    </div>
+
+  <div class="tablewrap">
+  <table data-costtable>
+    <thead>
+      <tr>
+        <th class="chan">Channel</th>
+        <th>Spend</th>
+        <th>Clicks</th>
+        <th data-startcol>Started (1st touch)</th>
+        <th>Cost / start</th>
+        <th>Touched (any)</th>
+        <th>Cost / assist</th>
+        <th data-coststage>{{ cost.stage_label }} (1st touch)</th>
+        <th>Cost / <span data-coststagelow>{{ cost.stage_label|lower }}</span></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for r in cost.rows %}
+        <tr>
+          <td class="chan"><b>{{ r.name }}</b></td>
+          <td>{{ money(r.cost) }}</td>
+          <td>{{ r.clicks|num }}</td>
+          <td>{{ r.first_n|num }}</td>
+          <td class="pct">{{ money(r.cost_per_start, 2) }}</td>
+          <td>{{ r.n|num }}</td>
+          <td>{{ money(r.cost_per_assist, 2) }}</td>
+          <td>{{ r.stage_n|num }}</td>
+          <td class="pct">{{ money(r.cost_per_stage, 2) }}</td>
+        </tr>
+        {% for s in r.subs %}
+          <tr class="sub">
+            <td class="chan">{{ s.name }}</td>
+            <td>{{ money(s.cost) }}</td>
+            <td>{{ s.clicks|num }}</td>
+            <td>{{ s.first_n|num }}</td>
+            <td class="pct">{{ money(s.cost_per_start, 2) }}</td>
+            <td>{{ s.n|num }}</td>
+            <td>{{ money(s.cost_per_assist, 2) }}</td>
+            <td>{{ s.stage_n|num }}</td>
+            <td class="pct">{{ money(s.cost_per_stage, 2) }}</td>
+          </tr>
+        {% endfor %}
+      {% endfor %}
+    </tbody>
+    <tfoot>
+      <tr>
+        <td class="chan"><b>All paid</b></td>
+        <td>{{ money(cost.total_cost) }}</td>
+        <td></td>
+        <td data-foot-start>{{ cost.total_first|num }}</td>
+        <td class="pct" data-foot-startper>{{ money(cost.blended_per_start, 2) }}</td>
+        <td><span class="dash" title="Any-touch rows overlap and must not be summed">—</span></td>
+        <td><span class="dash">—</span></td>
+        <td data-foot-n>{{ cost.stage_total|num }}</td>
+        <td class="pct" data-foot-per>{{ money(cost.blended_per_stage, 2) }}</td>
+      </tr>
+    </tfoot>
+  </table>
+  </div>
+
+  <div class="note" data-overlapnote style="margin:0 20px 18px"
+       {{ '' if not cost.rows_sum else 'hidden' }}>Any-touch: a person counts in
+    every paid channel they touched, so these rows <b>overlap and do not add up</b>.
+    The total row is a de-duplicated count of everyone reached by paid — not the
+    sum of the column, which would charge a Google-and-Meta applicant twice.</div>
+
+  {% if stage == 'enrolled' %}
+    <div class="note warn" style="margin:0 20px 18px">Enrolled is a maturing cohort —
+      only {{ cost.stage_total|num }} people so far, and Slate only flips that flag at
+      matriculation. Read cost per enrolled as “not settled yet”, not as a rate.</div>
+  {% endif %}
+</section>
+
+{# ---------- spend over time ---------- #}
+{% if trend.labels|length > 1 %}
+<details class="card fold" data-fold="spendtrend" open>
+  <summary>
+    <span class="fold-chev">▶</span>
+    <span class="fold-title">
+      <span class="eyebrow">Pacing</span>
+      <span class="display">Spend <span class="serif-it">over time</span></span>
+    </span>
+    {{ tip(['Monthly spend as the platforms billed it. Compare the shape against
+             “When tags land” on the Overview to see whether traffic followed the money.']) }}
+    <span class="fold-hint fold-hint-open">click to collapse</span>
+    <span class="fold-hint fold-hint-closed">click to expand</span>
+  </summary>
+  <div class="fold-body">
+    <div class="foldnote">
+      {{ series_tree('sp_pick', sp_tree, sp_selected, sp_all, 'spendtrend', trend.dropped) }}
+    </div>
+    <div class="chartbox tall" style="padding:0 20px 18px"><canvas id="spendChart"></canvas></div>
+    <div class="hint" data-empty="sp_pick" style="padding:0 20px 20px"
+         {{ '' if not trend.series else 'hidden' }}>Nothing selected.</div>
+  </div>
+</details>
+{% endif %}
+
+{# ---------- provenance ---------- #}
+<details class="card fold" data-fold="spendsrc">
+  <summary>
+    <span class="fold-chev">▶</span>
+    <span class="fold-title">
+      <span class="eyebrow">Provenance</span>
+      <span class="display">Where these <span class="serif-it">numbers</span> came from</span>
+    </span>
+    <span class="fold-hint fold-hint-open">click to collapse</span>
+    <span class="fold-hint fold-hint-closed">click to expand</span>
+  </summary>
+  <div class="fold-body">
+    <div class="tablewrap">
+    <table>
+      <thead><tr><th class="chan">File</th><th>Platform</th><th>Program</th>
+        <th>Rows</th><th >Total</th><th>Period</th><th>Uploaded</th></tr></thead>
+      <tbody>
+        {% for u in spend_uploads %}
+          <tr>
+            <td class="chan">{{ u.filename }}</td>
+            <td>{{ u.platform }}</td>
+            <td>{{ programs[u.program].label if u.program in programs else u.program }}</td>
+            <td>{{ u.row_count|num }}</td>
+            <td>{{ money(u.total_cost) }}</td>
+            <td>{{ u.period_start }} → {{ u.period_end }}</td>
+            <td>{{ u.uploaded_at[:16]|replace('T', ' ') }}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    </div>
+    {% if coverage %}
+      <div class="note" style="margin:0 20px 18px">Meta tags its links
+        <code>utm_content={{ '{{ad.id}}' }}</code>, so spend can be checked against the
+        ping log ad by ad: <b>{{ '%.1f'|format(coverage.spend_pct * 100) }}%</b> of Meta
+        spend and <b>{{ '%.1f'|format(coverage.pings_pct * 100) }}%</b> of Meta pings are
+        on ads both sides know about ({{ coverage.matched_ads }} of
+        {{ coverage.ads }} ads). A sharp fall here means the spend file and the funnel
+        have drifted apart.</div>
+    {% endif %}
+  </div>
+</details>
+
+<script>
+  {% if trend.labels|length > 1 %}
+    AADA.spendChart({{ trend|tojson }});
+    AADA.wireSpendPicker({{ sp_payload|tojson }});
+  {% endif %}
+  AADA.wireCostTable({{ cost_payload|tojson }}, {{ stage|tojson }},
+                     {{ program.channel_stage|tojson }}, {{ cost_attr|tojson }});
+</script>
+{% endif %}
+{% endblock %}

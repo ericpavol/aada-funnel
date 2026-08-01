@@ -1,0 +1,26 @@
+# Render service definition. One instance, one attached disk -- deliberately;
+# SQLite (app/db.py) wants exactly one process writing to one file, and Render's
+# hobby tier defaults to this shape already, so there is nothing to turn off.
+#
+# AADA_USER / AADA_PASS are NOT set here -- `sync: false` means Render prompts
+# for them once in the dashboard and stores them as encrypted secrets. They must
+# never be committed to this file or anywhere else in the repo.
+services:
+  - type: web
+    name: aada-funnel
+    runtime: python
+    plan: starter
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    autoDeploy: true
+    disk:
+      name: aada-funnel-data
+      mountPath: /var/data
+      sizeGB: 1
+    envVars:
+      - key: AADA_DB
+        value: /var/data/funnel.db
+      - key: AADA_USER
+        sync: false
+      - key: AADA_PASS
+        sync: false

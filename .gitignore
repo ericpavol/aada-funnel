@@ -1,0 +1,12 @@
+# The database holds REAL applicant records ingested from Slate exports.
+# Never commit it. See CLAUDE.md "Data handling" in the handoff package.
+data/
+*.db
+*.db-wal
+*.db-shm
+
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.DS_Store

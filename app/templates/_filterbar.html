@@ -1,0 +1,84 @@
+{# Token bar. Tokens are server-rendered and each ✕ is a real link, so reading
+   and clearing filters works without JavaScript; only the add/edit picker needs
+   it. Filter state stays entirely in the query string, so links remain
+   shareable and the browser's back button works. #}
+<div class="fbar" id="filterbar"
+     data-spec='{{ filter_spec|tojson }}'
+     data-search='{{ request.url.path }}'>
+
+  {# The date range is pulled OUT of the picker rather than hidden behind
+     "+ Add filter": every figure in the app is read for one intake year, and a
+     range buried in a popover was too easy to leave on the wrong setting.
+     It is applied by default, and "All time" is one click away. #}
+  <div class="fbar-row fbar-dates">
+    <span class="eyebrow">App start date</span>
+    <div class="tabsm">
+      {% for y in fy_years %}
+        <a class="{{ 'on' if y == fy_active else '' }}"
+           href="{{ request.url.path }}?{{ qs_set(request, 'dates', none if loop.first else y) }}"
+           title="1 Sept {{ y }} → 31 Aug {{ y + 1 }}">FY {{ y }}/{{ '%02d'|format((y + 1) % 100) }}</a>
+      {% endfor %}
+      <a class="{{ 'on' if fy_all_time else '' }}"
+         href="{{ request.url.path }}?{{ qs_set(request, 'dates', 'all') }}"
+         title="No date filter">All time</a>
+    </div>
+    {% if filters.date_field and fy_active is none and not fy_all_time %}
+      <span class="hint">Custom: {{ filters.date_from or '…' }} → {{ filters.date_to or '…' }}</span>
+    {% endif %}
+  </div>
+
+  <div class="fbar-row">
+    <button type="button" class="fb-search" data-fb-open="">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+           stroke-width="2.2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/>
+        <path d="M20 20l-3.6-3.6"/></svg>
+      Filter applicants…
+    </button>
+
+    {% for t in filters.tokens() %}
+      {# The date row above owns the fiscal-year range. Showing a token for
+         it too gave you an ✕ that appeared to do nothing: dropping the
+         params just re-applies the default. Custom ranges keep their
+         token, where clearing back to the default is a real action. #}
+      {% if not (t.key == 'date' and fy_active is not none) %}
+      <span class="fb-token">
+        <button type="button" class="fb-edit" data-fb-open="{{ t.key }}"
+                title="Edit {{ t.label }} filter">
+          <span class="k">{{ t.label }}</span>
+          <span class="v">
+            {%- if t.display|length <= 3 -%}
+              {{ t.display|join(', ') }}
+            {%- else -%}
+              {{ t.display[:2]|join(', ') }} +{{ t.display|length - 2 }}
+            {%- endif -%}
+          </span>
+        </button>
+        <a class="fb-x" href="{{ request.url.path }}?{{ qs_drop(request, t.key) }}"
+           title="Remove {{ t.label }} filter" aria-label="Remove {{ t.label }} filter">✕</a>
+      </span>
+      {% endif %}
+    {% endfor %}
+
+    <button type="button" class="fb-add" data-fb-open="">＋ Add filter</button>
+
+    <span class="fb-count">
+      {% if filters.active %}
+        <b>{{ filtered_total|num }}</b> of {{ program_total|num }} applicants
+      {% else %}
+        {{ program_total|num }} applicants · no filters
+      {% endif %}
+    </span>
+
+    {% if filters.active %}
+      <a class="fb-clear" href="{{ request.url.path }}?program={{ program.key }}{% if field is defined %}&field={{ field }}{% endif %}{% if limit is defined %}&limit={{ limit }}{% endif %}">Clear all</a>
+    {% endif %}
+  </div>
+
+  {# Picker, positioned and populated by filters.js #}
+  <div class="fb-pop" id="fbPop" hidden role="dialog" aria-label="Add filter"></div>
+
+  <noscript>
+    <div class="note" style="margin:11px 0 0">Adding filters needs JavaScript.
+      Removing them works from the ✕ on each token.</div>
+  </noscript>
+</div>

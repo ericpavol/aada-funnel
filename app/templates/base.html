@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{% block title %}AADA Funnel{% endblock %}</title>
+
+{# Stamp theme + accent before first paint so there is no flash of the wrong
+   palette. data-theme is always present after this runs, which is what lets
+   the dark-mode token block in app.css win at equal specificity. #}
+<script>
+(function(){
+  var r = document.documentElement;
+  try {
+    var t = localStorage.getItem("aada.theme");
+    var a = localStorage.getItem("aada.accent");
+    r.setAttribute("data-theme", t || (window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light"));
+    r.setAttribute("data-accent", a || "lime");
+  } catch (e) {
+    r.setAttribute("data-theme", "light");
+    r.setAttribute("data-accent", "lime");
+  }
+})();
+</script>
+
+<link rel="preload" href="/static/fonts/plex-400.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="/static/fonts/instrumentserif-400.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="{{ asset('app.css') }}">
+<script src="{{ asset('chart.umd.js') }}"></script>
+<script src="{{ asset('app.js') }}"></script>
+<script src="{{ asset('filters.js') }}" defer></script>
+</head>
+<body>
+
+<header class="topbar">
+  <div class="brand">
+    AADA
+    <small>Funnel&nbsp;· Slate ping data</small>
+  </div>
+
+  <div class="seg accent" role="group" aria-label="Program">
+    {% for k, p in programs.items() %}
+      <a class="{{ 'on' if p.key == program.key else '' }}"
+         href="{{ request.url.path }}?program={{ p.key }}">{{ p.label }}</a>
+    {% endfor %}
+  </div>
+
+  <nav class="seg spacer" aria-label="Sections">
+    <a class="{{ 'on' if request.url.path == '/' else '' }}"
+       href="/?{{ qs(filters) }}">Overview</a>
+    <a class="{{ 'on' if request.url.path == '/cost' else '' }}"
+       href="/cost?{{ qs(filters) }}">Cost</a>
+    <a class="{{ 'on' if request.url.path == '/utm' else '' }}"
+       href="/utm?{{ qs(filters) }}">UTM detail</a>
+    <a class="{{ 'on' if request.url.path == '/referrers' else '' }}"
+       href="/referrers?{{ qs(filters) }}">Referrers</a>
+    <a class="{{ 'on' if request.url.path == '/uploads' else '' }}"
+       href="/uploads?{{ qs(filters) }}">Data{% if unknown_count %}<span class="badge">{{ unknown_count }}</span>{% endif %}</a>
+  </nav>
+
+  <div class="themebar">
+    <div class="swatches" role="group" aria-label="Accent colour">
+      {% for a in ['lime','indigo','teal','amber','rose','violet','forest'] %}
+        <button class="swatch" data-accent="{{ a }}" aria-pressed="false"
+                title="{{ a|capitalize }} accent" aria-label="{{ a|capitalize }} accent"></button>
+      {% endfor %}
+    </div>
+    <button class="iconbtn" id="themeToggle" type="button" aria-label="Toggle theme"></button>
+  </div>
+</header>
+
+<main>
+<div class="stack">
+
+{% if unknown_count and request.url.path != '/uploads' %}
+  <div class="note warn">
+    <div class="note-row">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+           stroke-width="2" stroke-linecap="round"><path d="M12 8.5v5M12 17h.01"/>
+        <path d="M10.3 3.9 2.4 17.4A1.9 1.9 0 0 0 4 20.3h16a1.9 1.9 0 0 0 1.6-2.9L13.7 3.9a1.9 1.9 0 0 0-3.4 0Z"/></svg>
+      <span><b>{{ unknown_count }} unrecognised UTM source/medium combo{{ 's' if unknown_count != 1 else '' }}</b>
+        — currently pooled into “{{ UNRESOLVED }}”.
+        <a href="/uploads?{{ qs(filters) }}">Review them</a> so they can be classified.</span>
+    </div>
+  </div>
+{% endif %}
+
+{% block filterbar %}
+  {% if has_data %}{% include "_filterbar.html" %}{% endif %}
+{% endblock %}
+
+{% block body %}{% endblock %}
+
+</div>
+</main>
+</body>
+</html>

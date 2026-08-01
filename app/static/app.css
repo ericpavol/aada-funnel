@@ -1,0 +1,650 @@
+/* ==========================================================================
+   AADA Funnel — design system
+   --------------------------------------------------------------------------
+   Direction: "editorial analytics". An off-white paper plane, generous soft
+   cards, a serif display voice for titles against IBM Plex Sans for every
+   number, oversized light-weight figures, pill controls, hairline tables.
+
+   Colour contract:
+   - The CHART series palette is fixed and validated (dataviz six checks pass
+     in both modes; see README). It is never themed, because colour must follow
+     the entity, not the user's mood.
+   - The ACCENT is themeable and owns UI chrome only: active states, buttons,
+     focus rings, the funnel rails, the single-series comparison bars.
+   Fonts are self-hosted — this app makes no external network calls at runtime.
+   ========================================================================== */
+
+@font-face{font-family:'Plex';src:url('/static/fonts/plex-300.woff2') format('woff2');
+  font-weight:300;font-style:normal;font-display:swap}
+@font-face{font-family:'Plex';src:url('/static/fonts/plex-400.woff2') format('woff2');
+  font-weight:400;font-style:normal;font-display:swap}
+@font-face{font-family:'Plex';src:url('/static/fonts/plex-500.woff2') format('woff2');
+  font-weight:500;font-style:normal;font-display:swap}
+@font-face{font-family:'Plex';src:url('/static/fonts/plex-600.woff2') format('woff2');
+  font-weight:600;font-style:normal;font-display:swap}
+@font-face{font-family:'Editorial';src:url('/static/fonts/instrumentserif-400.woff2') format('woff2');
+  font-weight:400;font-style:normal;font-display:swap}
+@font-face{font-family:'Editorial';src:url('/static/fonts/instrumentserif-400-italic.woff2') format('woff2');
+  font-weight:400;font-style:italic;font-display:swap}
+
+:root{
+  --f-display:'Editorial',"Iowan Old Style",Georgia,serif;
+  --f-ui:'Plex',-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+
+  /* surfaces + ink (validated dataviz light surfaces) */
+  --plane:#f9f9f7;
+  --surface:#fcfcfb;
+  --surface-2:#f3f2ee;
+  --surface-3:#edece7;
+  --ink:#0b0b0b;
+  --ink-2:#52514e;
+  --ink-3:#898781;
+  --grid:#e1e0d9;
+  --axis:#c3c2b7;
+  --ring:rgba(11,11,11,.10);
+  --ring-2:rgba(11,11,11,.06);
+  --shadow:0 1px 2px rgba(11,11,11,.04),0 10px 30px -18px rgba(11,11,11,.18);
+  --shadow-lg:0 2px 4px rgba(11,11,11,.05),0 24px 60px -28px rgba(11,11,11,.26);
+
+  /* chart series — FIXED, never themed */
+  --s1:#2a78d6; --s2:#eb6834; --s3:#1baf7a; --s4:#eda100;
+  --s5:#e87ba4; --s6:#008300; --s7:#4a3aa7; --s8:#e34948;
+
+  /* status — reserved, always paired with an icon/label */
+  --good:#0ca30c; --warning:#fab219; --serious:#ec835a; --critical:#d03b3b;
+  --delta-up:#006300; --delta-down:#a8302f;
+
+  --r-sm:8px; --r-md:12px; --r-lg:18px; --r-xl:24px; --r-pill:999px;
+
+  /* default accent (lime) — see the token contract below */
+  --accent:#c7f000;      --accent-d:#c7f000;
+  --accent-fg:#0b0b0b;   --accent-fg-d:#0b0b0b;
+  --accent-strong:#3f6212; --accent-strong-d:#bef264;
+}
+
+/* ---- accent themes: chrome only -------------------------------------------
+   Three tokens per accent, because a vivid accent cannot do every job:
+     --accent        the FILL (buttons, active pills, rails, chips, bars)
+     --accent-fg     ink ON that fill — dark for lime, white for the deep hues
+     --accent-strong a deeper/brighter step for TEXT, hairlines and focus rings
+   Lime is the reason this split exists: #c7f000 carries dark ink at 14.9:1 but
+   only reaches 1.3:1 against the light surface, so it can never be a hairline
+   or a text colour. Every accent below is measured — fill/ink >= 4.5:1 and
+   strong-vs-surface >= 4.8:1 in both modes.                                  */
+:root[data-accent="lime"]  {--accent:#c7f000;--accent-d:#c7f000;
+                            --accent-fg:#0b0b0b;--accent-fg-d:#0b0b0b;
+                            --accent-strong:#3f6212;--accent-strong-d:#bef264}
+:root[data-accent="indigo"]{--accent:#3d3fb4;--accent-d:#8b8cf0;
+                            --accent-fg:#fff;--accent-fg-d:#0b0b0b;
+                            --accent-strong:#3d3fb4;--accent-strong-d:#8b8cf0}
+:root[data-accent="teal"]  {--accent:#0f766e;--accent-d:#5eccc0;
+                            --accent-fg:#fff;--accent-fg-d:#0b0b0b;
+                            --accent-strong:#0f766e;--accent-strong-d:#5eccc0}
+:root[data-accent="amber"] {--accent:#a16207;--accent-d:#e5b45c;
+                            --accent-fg:#fff;--accent-fg-d:#0b0b0b;
+                            --accent-strong:#a16207;--accent-strong-d:#e5b45c}
+:root[data-accent="rose"]  {--accent:#be123c;--accent-d:#f4879f;
+                            --accent-fg:#fff;--accent-fg-d:#0b0b0b;
+                            --accent-strong:#be123c;--accent-strong-d:#f4879f}
+:root[data-accent="violet"]{--accent:#6d28d9;--accent-d:#b69bf5;
+                            --accent-fg:#fff;--accent-fg-d:#0b0b0b;
+                            --accent-strong:#6d28d9;--accent-strong-d:#b69bf5}
+:root[data-accent="forest"]{--accent:#15803d;--accent-d:#68c98a;
+                            --accent-fg:#fff;--accent-fg-d:#0b0b0b;
+                            --accent-strong:#15803d;--accent-strong-d:#68c98a}
+
+/* Dark mode. Placed AFTER the accent blocks so `--accent: var(--accent-d)`
+   wins at equal specificity. data-theme is always stamped by the inline
+   script in <head>, so this attribute path is authoritative; the media query
+   below is only a no-JS fallback. Dark series steps are SELECTED for the dark
+   surface (validated as a set), not an automatic flip of the light ones. */
+:root[data-theme="dark"]{
+  --plane:#0d0d0d;
+  --surface:#1a1a19;
+  --surface-2:#232322;
+  --surface-3:#2c2c2a;
+  --ink:#fff;
+  --ink-2:#c3c2b7;
+  --ink-3:#898781;
+  --grid:#2c2c2a;
+  --axis:#383835;
+  --ring:rgba(255,255,255,.10);
+  --ring-2:rgba(255,255,255,.06);
+  --shadow:0 1px 2px rgba(0,0,0,.5),0 10px 30px -18px rgba(0,0,0,.8);
+  --shadow-lg:0 2px 4px rgba(0,0,0,.5),0 24px 60px -28px rgba(0,0,0,.9);
+  --s1:#3987e5; --s2:#d95926; --s3:#199e70; --s4:#c98500;
+  --s5:#d55181; --s6:#008300; --s7:#9085e9; --s8:#e66767;
+  --delta-up:#0ca30c; --delta-down:#e66767;
+  --accent:var(--accent-d);
+  --accent-fg:var(--accent-fg-d);
+  --accent-strong:var(--accent-strong-d);
+}
+@media (prefers-color-scheme:dark){
+  :root:where(:not([data-theme])){
+    --plane:#0d0d0d; --surface:#1a1a19; --surface-2:#232322; --surface-3:#2c2c2a;
+    --ink:#fff; --ink-2:#c3c2b7; --grid:#2c2c2a; --axis:#383835;
+    --ring:rgba(255,255,255,.10); --ring-2:rgba(255,255,255,.06);
+    --s1:#3987e5; --s2:#d95926; --s3:#199e70; --s4:#c98500;
+    --s5:#d55181; --s6:#008300; --s7:#9085e9; --s8:#e66767;
+    --accent:var(--accent-d);
+    --accent-fg:var(--accent-fg-d);
+    --accent-strong:var(--accent-strong-d);
+  }
+}
+
+/* derived washes — one source of truth per accent. Washes come from the FILL
+   (so they carry the accent's character) but every ring and every piece of text
+   on a wash comes from --accent-strong, which is the step that actually has
+   contrast. */
+:root{
+  --accent-wash:color-mix(in oklab,var(--accent) 14%,var(--surface));
+  --accent-wash-2:color-mix(in oklab,var(--accent) 24%,var(--surface));
+  --accent-ink:var(--accent-strong);
+  --accent-ring:color-mix(in oklab,var(--accent-strong) 32%,transparent);
+}
+
+*{box-sizing:border-box}
+html{color-scheme:light}
+:root[data-theme="dark"]{color-scheme:dark}
+body{
+  margin:0;background:var(--plane);color:var(--ink);
+  font:400 14px/1.55 var(--f-ui);
+  -webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;
+}
+/* Faint grain so the plane reads as paper rather than flat #fff */
+body::before{
+  content:"";position:fixed;inset:0;pointer-events:none;z-index:0;opacity:.5;
+  background-image:radial-gradient(var(--ring-2) .5px,transparent .5px);
+  background-size:14px 14px;
+}
+a{color:var(--accent-ink);text-underline-offset:2px}
+
+h1,h2,h3,h4{margin:0;font-weight:400;letter-spacing:-.01em}
+.display{font-family:var(--f-display);font-weight:400;letter-spacing:-.015em;
+  line-height:1.05}
+h1.display{font-size:29px}
+h2.display{font-size:23px}
+.eyebrow{font-size:10.5px;font-weight:600;text-transform:uppercase;
+  letter-spacing:.1em;color:var(--ink-3)}
+.sub{color:var(--ink-3);font-size:12.5px}
+.serif-it{font-family:var(--f-display);font-style:italic}
+
+/* ============================ top bar ============================ */
+.topbar{
+  position:sticky;top:0;z-index:40;background:color-mix(in oklab,var(--plane) 86%,transparent);
+  backdrop-filter:saturate(1.6) blur(14px);
+  border-bottom:1px solid var(--ring-2);
+  padding:11px 20px;display:flex;align-items:center;gap:16px;flex-wrap:wrap;
+}
+.brand{font-family:var(--f-display);font-size:30px;line-height:1;letter-spacing:-.025em;
+  display:flex;align-items:baseline;gap:10px;white-space:nowrap;color:var(--ink)}
+.brand small{font-family:var(--f-ui);font-size:11px;font-weight:500;color:var(--ink-3);
+  letter-spacing:.02em}
+
+/* pill groups */
+.seg{display:inline-flex;align-items:center;background:var(--surface-2);
+  border:1px solid var(--ring-2);border-radius:var(--r-pill);padding:3px;gap:2px}
+/* Every pill is the same height in every group. Two things used to break that:
+   a flex row stretches its children, so the badge on "Data" made that whole
+   group taller than the program switch; and the active pill's border grew only
+   itself. A transparent border on all of them plus a fixed min-height keeps the
+   groups matched. */
+.seg a,.seg button{
+  appearance:none;background:transparent;cursor:pointer;
+  border:1px solid transparent;
+  font:500 12.5px/1 var(--f-ui);color:var(--ink-2);
+  display:inline-flex;align-items:center;justify-content:center;min-height:28px;
+  padding:0 14px;border-radius:var(--r-pill);text-decoration:none;
+  white-space:nowrap;transition:background .16s,color .16s}
+.seg a:hover,.seg button:hover{background:var(--surface);color:var(--ink)}
+.seg a.on,.seg button.on{background:var(--ink);color:var(--plane)}
+.seg.accent a.on{background:var(--accent);color:var(--accent-fg);
+  border-color:color-mix(in oklab,var(--accent) 74%,var(--accent-strong))}
+
+.spacer{margin-left:auto}
+.badge{display:inline-flex;align-items:center;justify-content:center;min-width:18px;
+  height:18px;padding:0 5px;border-radius:var(--r-pill);background:var(--critical);
+  color:#fff;font-size:10.5px;font-weight:600;margin-left:6px;
+  flex:0 0 auto;align-self:center}
+
+/* theme controls */
+.themebar{display:flex;align-items:center;gap:8px}
+.swatches{display:flex;gap:5px;align-items:center}
+.swatch{width:17px;height:17px;border-radius:50%;border:2px solid transparent;
+  cursor:pointer;padding:0;outline-offset:2px;transition:transform .14s,border-color .14s}
+.swatch:hover{transform:scale(1.16)}
+.swatch[aria-pressed="true"]{border-color:var(--ink)}
+.swatch[data-accent="lime"]  {background:#c7f000}
+.swatch[data-accent="indigo"]{background:#3d3fb4}
+.swatch[data-accent="teal"]  {background:#0f766e}
+.swatch[data-accent="amber"] {background:#a16207}
+.swatch[data-accent="rose"]  {background:#be123c}
+.swatch[data-accent="violet"]{background:#6d28d9}
+.swatch[data-accent="forest"]{background:#15803d}
+.iconbtn{width:32px;height:32px;border-radius:50%;border:1px solid var(--ring);
+  background:var(--surface);color:var(--ink-2);cursor:pointer;display:grid;
+  place-items:center;font-size:13px;transition:background .16s,color .16s,transform .14s}
+.iconbtn:hover{background:var(--surface-2);color:var(--ink);transform:translateY(-1px)}
+/* Icons must never swallow the click meant for their button. */
+.iconbtn svg,.btn svg,.swatch svg{pointer-events:none}
+
+/* ============================ layout ============================ */
+main{position:relative;z-index:1;padding:22px 20px 70px;max-width:1560px;margin:0 auto}
+.stack{display:flex;flex-direction:column;gap:16px}
+.grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(390px,1fr));gap:16px}
+
+.card{
+  background:var(--surface);border:1px solid var(--ring-2);border-radius:var(--r-lg);
+  box-shadow:var(--shadow);padding:18px 20px;
+  animation:rise .5s cubic-bezier(.2,.7,.2,1) backwards;
+}
+.card.pad0{padding:0;overflow:hidden}
+@keyframes rise{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
+.card:nth-of-type(1){animation-delay:.02s}
+.card:nth-of-type(2){animation-delay:.07s}
+.card:nth-of-type(3){animation-delay:.12s}
+.card:nth-of-type(4){animation-delay:.17s}
+.card:nth-of-type(5){animation-delay:.22s}
+@media (prefers-reduced-motion:reduce){
+  .card{animation:none}
+}
+.cardhead{display:flex;align-items:flex-start;gap:12px;margin-bottom:14px;flex-wrap:wrap}
+.cardhead .grow{flex:1;min-width:200px}
+
+/* ============================ notes ============================ */
+.note{font-size:12.5px;color:var(--ink-2);background:var(--surface-2);
+  border-radius:var(--r-md);padding:9px 13px;margin:10px 0;
+  border-left:2px solid var(--axis)}
+.note b{color:var(--ink);font-weight:600}
+.note.accent{background:var(--accent-wash);border-left-color:var(--accent-strong)}
+.note.warn{background:color-mix(in oklab,var(--warning) 12%,var(--surface));
+  border-left-color:var(--warning)}
+.note.bad{background:color-mix(in oklab,var(--critical) 10%,var(--surface));
+  border-left-color:var(--critical)}
+.note.ok{background:color-mix(in oklab,var(--good) 11%,var(--surface));
+  border-left-color:var(--good)}
+.note-row{display:flex;gap:9px;align-items:flex-start}
+.note-row svg{flex:0 0 auto;margin-top:2px}
+
+/* ============================ buttons ============================ */
+.btn{appearance:none;font:500 13px/1 var(--f-ui);padding:9px 17px;border-radius:var(--r-pill);
+  border:1px solid color-mix(in oklab,var(--accent) 74%,var(--accent-strong));
+  background:var(--accent);color:var(--accent-fg);cursor:pointer;
+  text-decoration:none;display:inline-flex;align-items:center;gap:7px;
+  transition:filter .16s,transform .14s,box-shadow .16s}
+.btn:hover{filter:brightness(1.08);transform:translateY(-1px);
+  box-shadow:0 6px 18px -8px var(--accent-ring)}
+.btn.ghost{background:var(--surface);color:var(--ink-2);border-color:var(--ring)}
+.btn.ghost:hover{background:var(--surface-2);color:var(--ink);filter:none}
+.btn.sm{padding:6px 12px;font-size:12px}
+:where(button,a,select,input,summary):focus-visible{
+  outline:2px solid var(--accent-strong);outline-offset:2px;border-radius:var(--r-sm)}
+
+/* ======================= filters — token bar =======================
+   The bar is server-rendered; only the picker popover is JS. Tokens group by
+   dimension ("Region · CA, NY, TX") so each is one removable unit, and every ✕
+   is a real link. */
+.fbar{position:relative;background:var(--surface);border:1px solid var(--ring-2);
+  border-radius:var(--r-lg);box-shadow:var(--shadow);padding:12px 14px;z-index:12}
+.fbar-row{display:flex;align-items:center;gap:7px;flex-wrap:wrap}
+
+.fb-search{display:inline-flex;align-items:center;gap:7px;background:var(--surface-2);
+  border:1px solid var(--ring-2);border-radius:var(--r-pill);padding:7px 14px;
+  color:var(--ink-3);font:400 12.5px/1 var(--f-ui);cursor:pointer;min-width:190px;
+  text-align:left;transition:border-color .16s,color .16s}
+.fb-search:hover{border-color:var(--axis);color:var(--ink-2)}
+
+.fb-token{display:inline-flex;align-items:stretch;border:1px solid var(--accent-ring);
+  background:var(--accent-wash);border-radius:var(--r-pill);overflow:hidden}
+.fb-edit{appearance:none;border:0;background:transparent;cursor:pointer;
+  font:500 12px/1 var(--f-ui);color:var(--accent-strong);padding:6px 4px 6px 11px;
+  display:inline-flex;align-items:center;gap:6px;max-width:340px}
+.fb-edit .k{font-weight:600;opacity:.7}
+.fb-edit .v{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.fb-edit:hover{background:var(--accent-wash-2)}
+.fb-x{display:inline-flex;align-items:center;padding:0 9px 0 5px;font-size:11px;
+  color:var(--accent-strong);opacity:.55;text-decoration:none;transition:opacity .14s}
+.fb-x:hover{opacity:1;background:var(--accent-wash-2)}
+
+.fb-add{appearance:none;cursor:pointer;font:500 12.5px/1 var(--f-ui);color:var(--ink-2);
+  background:transparent;border:1px dashed var(--axis);border-radius:var(--r-pill);
+  padding:6px 13px;transition:border-color .16s,color .16s,background .16s}
+.fb-add:hover{border-color:var(--accent-strong);color:var(--accent-strong);
+  background:var(--accent-wash)}
+
+.fb-count{margin-left:auto;font-size:11.5px;color:var(--ink-3);
+  font-variant-numeric:tabular-nums}
+.fb-count b{color:var(--ink);font-weight:600}
+.fb-clear{font-size:11.5px;font-weight:600;color:var(--accent-strong);text-decoration:none}
+.fb-clear:hover{text-decoration:underline}
+
+.fb-pop{position:absolute;width:286px;background:var(--surface);
+  border:1px solid var(--ring);border-radius:var(--r-md);box-shadow:var(--shadow-lg);
+  z-index:30;overflow:hidden;animation:popin .13s ease-out}
+@keyframes popin{from{opacity:0;transform:translateY(-4px)}to{opacity:1;transform:none}}
+@media (prefers-reduced-motion:reduce){.fb-pop{animation:none}}
+.fb-head{display:flex;align-items:center;gap:8px;padding:9px 11px;
+  border-bottom:1px solid var(--ring-2);color:var(--ink-3)}
+.fb-head-plain{padding:11px 12px;color:var(--ink);font-size:12.5px}
+.fb-head input{flex:1;border:0;background:transparent;outline:none;padding:0;
+  font:400 12.5px/1.3 var(--f-ui);color:var(--ink)}
+.fb-head input::placeholder{color:var(--ink-3)}
+.fb-list{max-height:236px;overflow-y:auto;padding:5px}
+.fb-body{padding:11px 12px}
+.fb-row{display:flex;width:100%;align-items:center;gap:9px;padding:7px 9px;
+  border:0;background:transparent;border-radius:var(--r-sm);cursor:pointer;
+  font:400 12.5px/1.3 var(--f-ui);color:var(--ink);text-align:left}
+.fb-row:hover{background:var(--surface-2)}
+.fb-row .lbl{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.fb-row .n{color:var(--ink-3);font-size:11px;font-variant-numeric:tabular-nums}
+.fb-row.is-sel{background:var(--accent-wash)}
+.fb-dim.is-on .lbl{color:var(--accent-strong);font-weight:600}
+.fb-kbd{font-family:ui-monospace,Menlo,monospace;font-size:9.5px;color:var(--ink-3);
+  background:var(--surface-3);border:1px solid var(--ring-2);border-radius:4px;
+  padding:1px 5px}
+.fb-box{width:15px;height:15px;flex:0 0 auto;border-radius:4px;
+  border:1.5px solid var(--axis);background:var(--surface);display:grid;place-items:center;
+  color:var(--accent-fg)}
+.fb-box svg{width:9px;height:9px;display:none}
+.fb-row.is-sel .fb-box{background:var(--accent);
+  border-color:color-mix(in oklab,var(--accent) 74%,var(--accent-strong))}
+.fb-row.is-sel .fb-box svg{display:block}
+.fb-foot{display:flex;align-items:center;justify-content:space-between;gap:8px;
+  padding:8px 11px;border-top:1px solid var(--ring-2);background:var(--surface-2)}
+.fb-note{font-size:11px;color:var(--ink-3)}
+.fb-link{appearance:none;border:0;background:none;padding:0;cursor:pointer;
+  font:600 11px/1 var(--f-ui);color:var(--accent-strong)}
+.fb-link:hover{text-decoration:underline}
+.fb-none{padding:14px 10px;font-size:12px;color:var(--ink-3);text-align:center}
+.fb-lab{display:block;font-size:10px;font-weight:600;text-transform:uppercase;
+  letter-spacing:.07em;color:var(--ink-3);margin-bottom:4px}
+.fb-dates{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:9px}
+.fb-span{margin-top:8px;font-size:10.5px;color:var(--ink-3)}
+
+/* ---- shared form controls (upload form, picker internals) ---- */
+.chip{display:inline-flex;align-items:center;gap:6px;font-size:11.5px;font-weight:500;
+  background:var(--accent-wash);color:var(--accent-strong);
+  border:1px solid var(--accent-ring);padding:4px 10px;border-radius:var(--r-pill)}
+.chip.plain{background:var(--surface-2);color:var(--ink-2);border-color:var(--ring-2)}
+.fgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(178px,1fr));gap:13px;
+  align-items:start}
+.field label,.field>.eyebrow{display:block;margin-bottom:5px}
+.datecell{grid-column:span 2}
+.daterow{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+@media (max-width:820px){.datecell{grid-column:span 1}.daterow{grid-template-columns:1fr}}
+select,input[type=date],input[type=file]{
+  width:100%;font:400 12.5px/1.3 var(--f-ui);color:var(--ink);
+  background:var(--surface);border:1px solid var(--ring);border-radius:var(--r-sm);
+  padding:7px 9px;transition:border-color .16s,box-shadow .16s}
+select:hover,input[type=date]:hover{border-color:var(--axis)}
+select:focus,input[type=date]:focus{border-color:var(--accent-strong);
+  box-shadow:0 0 0 3px var(--accent-ring);outline:none}
+select[multiple]{height:104px;padding:5px}
+select[multiple] option{padding:3px 6px;border-radius:5px}
+select[multiple] option:checked{background:var(--accent);color:var(--accent-fg)}
+.hint{font-size:11px;color:var(--ink-3)}
+.fbtns{display:flex;gap:9px;align-items:center;flex-wrap:wrap;margin-top:15px}
+
+/* ============================ hero funnel ============================ */
+.herowrap{display:grid;grid-template-columns:minmax(215px,.8fr) 2.2fr;gap:26px}
+@media (max-width:900px){.herowrap{grid-template-columns:1fr}}
+.hero .eyebrow{margin-bottom:7px}
+.figure{font-weight:300;font-size:clamp(46px,6.2vw,70px);line-height:.95;
+  letter-spacing:-.035em;font-variant-numeric:tabular-nums;color:var(--ink)}
+.figure-unit{font-size:14px;font-weight:400;color:var(--ink-3);letter-spacing:0;
+  margin-left:2px}
+.herometa{margin-top:11px;font-size:12.5px;color:var(--ink-2);max-width:34ch}
+
+.steps{display:flex;flex-direction:column;gap:1px}
+.step{display:grid;grid-template-columns:150px 1fr 132px;gap:14px;align-items:center;
+  padding:9px 0;border-bottom:1px solid var(--ring-2)}
+.step:last-child{border-bottom:0}
+.step-name{font-size:12.5px;font-weight:500;color:var(--ink);display:flex;
+  align-items:center;gap:7px}
+.step-name .idx{font-size:10px;color:var(--ink-3);font-variant-numeric:tabular-nums;
+  width:14px;flex:0 0 auto}
+.rail{position:relative;height:9px;background:var(--surface-2);border-radius:var(--r-pill);
+  overflow:hidden}
+.rail i{position:absolute;inset:0 auto 0 0;border-radius:var(--r-pill);
+  background:linear-gradient(90deg,color-mix(in oklab,var(--accent) 78%,var(--accent-strong)),var(--accent));
+  animation:grow .7s cubic-bezier(.2,.7,.2,1) backwards}
+@keyframes grow{from{transform:scaleX(0);transform-origin:left}to{transform:none}}
+@media (prefers-reduced-motion:reduce){.rail i{animation:none}}
+.step-val{display:flex;align-items:baseline;gap:8px;justify-content:flex-end}
+.step-n{font-size:17px;font-weight:500;font-variant-numeric:tabular-nums}
+.step-pct{font-size:11.5px;color:var(--ink-3);font-variant-numeric:tabular-nums}
+
+.delta{display:inline-flex;align-items:center;gap:3px;font-size:11px;font-weight:600;
+  padding:2px 7px;border-radius:var(--r-pill);font-variant-numeric:tabular-nums;
+  background:var(--surface-2);color:var(--ink-2)}
+.delta.down{background:color-mix(in oklab,var(--critical) 12%,var(--surface));
+  color:var(--delta-down)}
+.delta.up{background:color-mix(in oklab,var(--good) 14%,var(--surface));
+  color:var(--delta-up)}
+
+/* ============================ charts ============================ */
+.chartbox{position:relative;height:298px}
+.chartbox.tall{height:430px}
+.chartbox.sm{height:250px}
+
+/* ==================== series tree picker ====================
+   Parents with sub-sources nested under them, shared by the timeline and the
+   stage-presence chart. Collapsed to a one-line summary by default: it is a
+   control, not content, and expanded it was taking half the card. Open/closed
+   is remembered like the section folds. */
+.stree-fold{border:1px solid var(--ring-2);border-radius:var(--r-md);
+  background:var(--surface);margin-bottom:11px}
+.stree-sum{list-style:none;cursor:pointer;display:flex;align-items:center;gap:10px;
+  padding:9px 12px;flex-wrap:wrap}
+.stree-sum::-webkit-details-marker{display:none}
+.stree-sum:hover{background:var(--surface-2);border-radius:var(--r-md)}
+.stree-fold[open]>.stree-sum{border-bottom:1px solid var(--ring-2);
+  border-radius:var(--r-md) var(--r-md) 0 0}
+.stree-sumtxt{flex:1;min-width:0;font-size:12.5px;color:var(--ink-2);
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.stree-sumtxt b{color:var(--ink);font-weight:600}
+.stree-edit{font:600 10.5px/1 var(--f-ui);text-transform:uppercase;letter-spacing:.06em;
+  color:var(--accent-strong);border:1px solid var(--accent-ring);background:var(--accent-wash);
+  border-radius:var(--r-pill);padding:4px 10px;flex:0 0 auto}
+.stree-fold[open]>.stree-sum .stree-edit::after{content:" \2715"}
+
+.stree-body{padding:11px 12px 12px}
+.stree-hdr{display:flex;align-items:center;justify-content:space-between;gap:12px;
+  margin-bottom:9px;flex-wrap:wrap}
+.stree-acts{display:flex;gap:5px;flex-wrap:wrap}
+.stree-acts a{font:600 10.5px/1 var(--f-ui);color:var(--ink-3);text-decoration:none;
+  border:1px dashed var(--ring);border-radius:var(--r-pill);padding:5px 11px;white-space:nowrap}
+.stree-acts a:hover{border-color:var(--accent-strong);color:var(--accent-strong)}
+
+/* Two columns, three when there is room. Each parent travels with its own
+   sub-sources — a group splitting across a column break would orphan children
+   from the parent they belong to, which is the whole point of the tree. */
+.stree{column-count:2;column-gap:20px}
+@media (max-width:820px){.stree{column-count:1}}
+@media (min-width:1200px){.stree{column-count:3}}
+.sgroupwrap{break-inside:avoid;-webkit-column-break-inside:avoid;
+  page-break-inside:avoid;display:block}
+
+.srow{display:flex;align-items:center;gap:8px;padding:5px 7px;font-size:12.5px;
+  border-radius:var(--r-sm);list-style:none;cursor:default}
+.srow::-webkit-details-marker{display:none}
+.srow:hover{background:var(--surface-2)}
+.srow.sub{padding-left:26px;font-size:12px;color:var(--ink-2)}
+.scv{flex:0 0 auto;width:10px;font-size:7.5px;color:var(--ink-3);
+  transition:transform .18s;display:inline-block}
+.sgroup[open]>summary .scv,.stree-fold[open]>.stree-sum .scv{transform:rotate(90deg)}
+.scv.sflat{visibility:hidden}
+.sbox{flex:0 0 auto;width:15px;height:15px;border-radius:4px;border:1.5px solid var(--axis);
+  background:var(--surface);display:grid;place-items:center;color:var(--accent-fg);
+  text-decoration:none}
+.sbox svg{width:9px;height:9px;display:none}
+.srow.on>.sbox{background:var(--accent);
+  border-color:color-mix(in oklab,var(--accent) 74%,var(--accent-strong))}
+.srow.on>.sbox svg{display:block}
+.snm{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+  color:inherit;text-decoration:none}
+.srow.on>.snm{font-weight:600;color:var(--ink)}
+.srow.sub.on>.snm{font-weight:500}
+.sn{color:var(--ink-3);font-size:10.5px;font-variant-numeric:tabular-nums;flex:0 0 auto}
+/* ONLY stays hidden until the row is hovered or focused, so the list reads as
+   names and counts rather than a column of buttons. */
+.only{flex:0 0 auto;font:700 9px/1 var(--f-ui);letter-spacing:.05em;
+  text-transform:uppercase;color:var(--accent-strong);background:var(--accent-wash);
+  border:1px solid var(--accent-ring);border-radius:var(--r-pill);padding:3px 7px;
+  text-decoration:none;opacity:0;transition:opacity .13s}
+.srow:hover .only,.srow:focus-within .only,.only:focus{opacity:1}
+
+/* ==================== hover tips ====================
+   One affordance per section instead of a stack of note boxes: the caveats stay
+   reachable but stop pushing the chart below the fold. Opens on hover AND on
+   keyboard focus, so it is not mouse-only. */
+.tip{position:relative;display:inline-flex;align-items:center;justify-content:center;
+  width:17px;height:17px;flex:0 0 auto;border-radius:50%;border:1px solid var(--ring);
+  background:var(--surface);color:var(--ink-3);cursor:help;vertical-align:3px;
+  margin-left:8px;font:600 10px/1 var(--f-ui);font-style:normal;letter-spacing:0;
+  transition:color .15s,border-color .15s}
+.tip:hover,.tip:focus-visible{color:var(--accent-strong);border-color:var(--accent-strong);
+  outline:none}
+.tip-pop{position:absolute;top:calc(100% + 9px);left:-6px;width:min(430px,72vw);
+  background:var(--ink);color:var(--surface);border-radius:var(--r-md);
+  padding:12px 14px;font:400 12px/1.55 var(--f-ui);letter-spacing:0;text-align:left;
+  box-shadow:var(--shadow-lg);z-index:70;opacity:0;visibility:hidden;
+  transform:translateY(-4px);transition:opacity .15s,transform .15s,visibility .15s;
+  pointer-events:none;white-space:normal}
+.tip:hover .tip-pop,.tip:focus .tip-pop,.tip:focus-within .tip-pop{
+  opacity:1;visibility:visible;transform:none}
+.tip-pop p{margin:0 0 8px}
+.tip-pop p:last-child{margin:0}
+.tip-pop b{color:inherit;font-weight:640}
+/* A tip near the right edge opens leftward so it cannot run off-screen. */
+.grid2 section:last-child .tip .tip-pop{left:auto;right:-6px}
+
+/* Select all / Clear all read as actions, not as another option chip. */
+.tabsm a.pickall{border-style:dashed;color:var(--ink-3);font-weight:600}
+.tabsm a.pickall:hover{border-color:var(--accent-strong);color:var(--accent-strong)}
+
+/* ==================== tag timeline controls ==================== */
+.tlbar{display:flex;gap:20px;flex-wrap:wrap;align-items:flex-start}
+/* Per-card stage control. Sits inside its card, above that chart only — the
+   rule it lives by is that it never reaches past its own section. */
+.stagebar{display:flex;gap:10px;flex-wrap:wrap;align-items:center;
+  margin:0 0 12px;padding-top:2px}
+.stagebar .eyebrow{flex:0 0 auto}
+.tlgroup .eyebrow{display:block;margin-bottom:5px}
+/* Past fiscal years read as past in the control too, matching the dashed,
+   dimmed lines they switch on. */
+.tabsm a.past{border-style:dashed;color:var(--ink-3)}
+.tabsm a.past.on{background:var(--surface-3);color:var(--ink-2);
+  border-color:var(--axis);border-style:dashed}
+
+/* ==================== collapsible card sections ====================
+   Native <details>, so it works without JS; app.js only remembers the
+   open/closed choice in localStorage. */
+/* Anchored sections must clear the sticky top bar when jumped to. --sticky-h is
+   measured by app.js because the bar wraps to 2-3 rows on narrow viewports, so a
+   fixed value would either hide the heading or waste a screenful. */
+:target{scroll-margin-top:calc(var(--sticky-h, 86px) + 14px)}
+details.fold{padding:0}
+details.fold>summary{position:relative}
+details.fold>summary{list-style:none;cursor:pointer;padding:16px 20px;display:flex;
+  align-items:center;gap:13px;user-select:none;transition:background .16s}
+details.fold>summary::-webkit-details-marker{display:none}
+details.fold>summary:hover{background:var(--surface-2)}
+details.fold[open]>summary{border-bottom:1px solid var(--ring-2)}
+.fold-chev{flex:0 0 auto;width:20px;height:20px;border-radius:6px;
+  border:1px solid var(--ring);color:var(--ink-3);display:grid;place-items:center;
+  font-size:8px;transition:transform .2s,color .16s,border-color .16s}
+details.fold[open]>summary .fold-chev{transform:rotate(90deg)}
+details.fold>summary:hover .fold-chev{color:var(--accent-strong);
+  border-color:var(--accent-strong)}
+.fold-title{flex:1;min-width:0}
+.fold-title .display{display:block;font-size:19px}
+.fold-hint{font-size:11.5px;color:var(--ink-3);font-variant-numeric:tabular-nums;
+  white-space:nowrap}
+details.fold[open]>summary .fold-hint-closed{display:none}
+details.fold:not([open])>summary .fold-hint-open{display:none}
+.fold-body{padding-bottom:0}
+.fold-body>.foldnote{padding:14px 20px 0}
+
+/* ============================ tables ============================ */
+.tablewrap{overflow-x:auto;border-top:1px solid var(--ring-2)}
+table{border-collapse:separate;border-spacing:0;width:100%;font-size:12.5px;
+  font-variant-numeric:tabular-nums}
+th,td{padding:8px 11px;text-align:right;white-space:nowrap;
+  border-bottom:1px solid var(--ring-2)}
+thead th{position:sticky;top:0;z-index:3;background:var(--surface);
+  font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.08em;
+  color:var(--ink-3);border-bottom:1px solid var(--ring)}
+thead th.grp{text-align:center;border-left:1px solid var(--ring-2)}
+th.chan,td.chan{text-align:left;white-space:normal;min-width:216px;position:sticky;
+  left:0;background:var(--surface);border-right:1px solid var(--ring-2);z-index:2}
+thead th.chan{z-index:4}
+td.pct{background:var(--surface-2);color:var(--ink-2)}
+tr.parent>td{font-weight:600}
+tr.sub>td{color:var(--ink-2)}
+tr.sub>td.chan{padding-left:30px;font-weight:400;position:relative}
+tr.sub>td.chan::before{content:"";position:absolute;left:15px;top:0;bottom:50%;
+  width:1px;background:var(--axis);opacity:.5}
+tr.sub>td.chan::after{content:"";position:absolute;left:15px;top:50%;width:8px;
+  height:1px;background:var(--axis);opacity:.5}
+tr.baseline>td{background:var(--accent-wash-2);font-weight:600;color:var(--ink);
+  border-top:1px solid var(--accent-strong);border-bottom:1px solid var(--accent-strong)}
+tr.baseline>td.chan{background:var(--accent-wash-2);color:var(--accent-ink);
+  font-family:var(--f-display);font-size:14.5px}
+tr.muted>td.chan{color:var(--ink-3);font-style:italic}
+tbody tr:hover>td{background:var(--surface-2)}
+tbody tr:hover>td.chan{background:var(--surface-2)}
+tbody tr:hover>td.pct{background:var(--surface-3)}
+tbody tr.baseline:hover>td{background:var(--accent-wash-2)}
+tbody tr:last-child>td{border-bottom:0}
+.swatchdot{display:inline-block;width:8px;height:8px;border-radius:2px;
+  margin-right:7px;vertical-align:1px;flex:0 0 auto}
+
+code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11.5px;
+  background:var(--surface-2);padding:2px 6px;border-radius:5px;color:var(--ink-2)}
+
+.empty{text-align:center;padding:62px 22px}
+.empty .display{margin-bottom:9px}
+.empty p{color:var(--ink-3);max-width:44ch;margin:0 auto 18px}
+.kv{display:flex;gap:22px;flex-wrap:wrap;font-size:12.5px;color:var(--ink-2)}
+.kv b{color:var(--ink);font-weight:600}
+.tabsm{display:flex;gap:5px;flex-wrap:wrap}
+.tabsm a{padding:5px 12px;border:1px solid var(--ring);border-radius:var(--r-pill);
+  text-decoration:none;color:var(--ink-2);font-size:12px;font-weight:500;
+  background:var(--surface);transition:all .16s}
+.tabsm a:hover{border-color:var(--axis);color:var(--ink)}
+.tabsm a.on{background:var(--accent);color:var(--accent-fg);
+  border-color:color-mix(in oklab,var(--accent) 74%,var(--accent-strong))}
+
+/* filter picker: a row is the value button plus its hover-revealed ONLY */
+.fb-line{display:flex;align-items:center;gap:4px;border-radius:var(--r-sm)}
+.fb-line:hover{background:var(--surface-2)}
+.fb-line.is-sel{background:var(--accent-wash)}
+.fb-line .fb-row{flex:1;min-width:0;background:transparent}
+.fb-line .fb-row:hover{background:transparent}
+.fb-only{flex:0 0 auto;margin-right:6px;font:700 9.5px/1 var(--f-ui);letter-spacing:.06em;
+  text-transform:uppercase;color:var(--accent-strong);background:var(--accent-wash);
+  border:1px solid var(--accent-ring);border-radius:var(--r-pill);padding:3px 8px;
+  cursor:pointer;opacity:0;transition:opacity .13s}
+.fb-line:hover .fb-only,.fb-only:focus{opacity:1}
+.fb-footacts{display:flex;gap:10px;align-items:center}
+
+/* Cost view. A dash is deliberate: it means "this channel has no ad-platform
+   cost", which is a different statement from $0 and must not be read as free. */
+.dash{color:var(--ink-3)}
+.costcard .costfig{display:flex;gap:26px;flex-wrap:wrap;padding:2px 0 14px}
+.costcard .costfig>div{min-width:104px}
+.costcard .costfig .k{display:block;font-size:11px;letter-spacing:.06em;
+  text-transform:uppercase;color:var(--ink-3);margin-bottom:3px}
+.costcard .costfig .v{font-size:23px;font-weight:600;letter-spacing:-.02em}
+.costcard .costfig .v small{font-size:12px;font-weight:400;color:var(--ink-3)}
+
+/* Date range, promoted out of the filter popover into its own row. */
+.fbar-dates{display:flex;align-items:center;gap:10px;flex-wrap:wrap;
+  padding-bottom:10px;margin-bottom:10px;border-bottom:1px solid var(--ring-2)}
+.fbar-dates .eyebrow{flex:0 0 auto}
+
+/* Attribution toggle. The note beside it is not decoration: which lens you are
+   in decides whether the rows are allowed to be added up. */
+.attrbar{margin-bottom:6px}
+.attrbar .hint{flex:1 1 240px;min-width:0}

@@ -1,0 +1,100 @@
+{% extends "base.html" %}
+{% block title %}UTM detail — AADA{% endblock %}
+
+{% block body %}
+{% if not has_data %}
+  <div class="card empty">
+    <h1 class="display">Nothing here <span class="serif-it">yet</span></h1>
+    <p>Upload a {{ program.label }} export first.</p>
+    <a class="btn" href="/uploads?program={{ program.key }}">Upload an export →</a>
+  </div>
+{% else %}
+
+{% set stages = program.stage_keys[1:] %}
+
+<section class="card pad0">
+  <div style="padding:18px 20px 0">
+    <div class="cardhead">
+      <div class="grow">
+        <div class="eyebrow">Raw UTM values</div>
+        <h1 class="display">Top {{ breakdown.label }} by <span class="serif-it">stage</span></h1>
+        <div class="sub" style="margin-top:5px">
+          {{ breakdown.distinct|num }} distinct values · showing top {{ limit }},
+          ranked by {{ program.stage_labels[program.channel_stage] }}
+        </div>
+      </div>
+    </div>
+
+    <div class="tabsm" style="margin-bottom:9px">
+      {% for key, lbl in utm_fields.items() %}
+        <a class="{{ 'on' if key == field else '' }}"
+           href="/utm?{{ qs(filters, field=key, limit=limit) }}">{{ lbl }}</a>
+      {% endfor %}
+    </div>
+    <div class="tabsm" style="margin-bottom:9px">
+      {% for n in [10, 20, 50, 100] %}
+        <a class="{{ 'on' if n == limit else '' }}"
+           href="/utm?{{ qs(filters, field=field, limit=n) }}">top {{ n }}</a>
+      {% endfor %}
+    </div>
+
+    <div class="note">The channel tables on Overview roll these raw strings up into
+      the channel taxonomy. This view leaves them raw, so the individual campaign
+      and content values behind each stage are visible.</div>
+    <div class="note warn">
+      <div class="note-row">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+             stroke-width="2" stroke-linecap="round"><circle cx="9" cy="9" r="5.5"/>
+          <circle cx="15" cy="15" r="5.5"/></svg>
+        <span>{{ caveat_any_touch }}</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="tablewrap">
+  <table>
+    <thead>
+      <tr>
+        <th class="chan" rowspan="2">{{ breakdown.label }}</th>
+        <th rowspan="2">Touched</th>
+        {% for k in stages %}
+          <th class="grp" colspan="2">{{ program.stage_labels[k] }}</th>
+        {% endfor %}
+      </tr>
+      <tr>
+        {% for k in stages %}
+          <th class="grp">#</th><th>% of value</th>
+        {% endfor %}
+      </tr>
+    </thead>
+    <tbody>
+      <tr class="baseline">
+        <td class="chan">All applicants</td>
+        <td>{{ breakdown.totals['started']|num }}</td>
+        {% for k in stages %}
+          <td>{{ breakdown.totals[k]|num }}</td>
+          <td class="pct">{{ (breakdown.totals[k] / breakdown.totals['started'] if breakdown.totals['started'] else 0)|pct }}</td>
+        {% endfor %}
+      </tr>
+      {% for row in breakdown.rows %}
+        <tr class="{{ 'muted' if row.value == '(not set)' else '' }}">
+          <td class="chan">{{ row.value }}</td>
+          <td>{{ row.n|num }}</td>
+          {% for k in stages %}
+            <td>{{ row.counts[k]|num }}</td>
+            <td class="pct">{{ row.within_pct[k]|pct }}</td>
+          {% endfor %}
+        </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+
+  {% if breakdown.truncated %}
+    <div class="hint" style="padding:11px 20px">{{ breakdown.truncated|num }} more
+      value(s) not shown — raise the limit above.</div>
+  {% endif %}
+</section>
+
+{% endif %}
+{% endblock %}

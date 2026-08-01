@@ -1,0 +1,247 @@
+{% extends "base.html" %}
+{% block title %}Data — AADA{% endblock %}
+{% block filterbar %}{% endblock %}
+
+{% block body %}
+
+{% if ok %}
+  <div class="note ok"><div class="note-row">
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+         stroke-width="2" stroke-linecap="round"><path d="M20 6 9 17l-5-5"/></svg>
+    <span><b>Ingested.</b> {{ ok }}</span>
+  </div></div>
+{% endif %}
+{% if err %}
+  <div class="note bad"><div class="note-row">
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+         stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/>
+      <path d="M15 9l-6 6M9 9l6 6"/></svg>
+    <span><b>Upload failed.</b> {{ err }}</span>
+  </div></div>
+{% endif %}
+
+<section class="card">
+  <div class="cardhead">
+    <div class="grow">
+      <div class="eyebrow">Ingest</div>
+      <h1 class="display">Add a Slate <span class="serif-it">export</span></h1>
+      <div class="sub" style="margin-top:5px">.xlsx with a sheet named <code>Export</code></div>
+    </div>
+  </div>
+
+  <form method="post" action="/uploads" enctype="multipart/form-data">
+    <div class="fgrid" style="max-width:660px">
+      <div class="field">
+        <span class="eyebrow">Export type</span>
+        <select name="program" aria-label="Export type">
+          {% for k, p in programs.items() %}
+            <option value="{{ k }}" {{ 'selected' if k == program.key else '' }}>Ping Data — {{ p.label }}</option>
+          {% endfor %}
+          <option value="referrals">Referrer ping log (native, one row per page view)</option>
+          <option value="spend_google">Media spend — Google Ads (.csv)</option>
+          <option value="spend_meta">Media spend — Meta Ads (.xlsx)</option>
+        </select>
+      </div>
+      <div class="field">
+        <span class="eyebrow">File</span>
+        <input type="file" name="file" accept=".xlsx,.csv" required aria-label="Export file">
+      </div>
+      <div class="field">
+        <span class="eyebrow">Spend belongs to</span>
+        <select name="spend_program" aria-label="Program for a spend file">
+          {% for k, p in programs.items() %}
+            <option value="{{ k }}" {{ 'selected' if k == program.key else '' }}>{{ p.label }}</option>
+          {% endfor %}
+        </select>
+        <span class="hint">Only used for the two media-spend types. Google and Meta
+          campaigns often serve both programs — upload a file filtered to one.</span>
+      </div>
+    </div>
+    <div class="fbtns"><button class="btn" type="submit">Upload &amp; merge</button></div>
+  </form>
+
+  <div class="note accent"><b>Uploads accumulate.</b> Records are keyed on Global ID +
+    term + application start date, and individual pings on their timestamp and UTM
+    values, so re-uploading an overlapping export updates what's already there
+    instead of double-counting. Funnel stages only ever move forward, so uploading
+    an older export can't walk someone back out of a stage.</div>
+
+  <div class="kv">
+    {% for k, p in programs.items() %}
+      <span><b>{{ totals[k]|num }}</b> {{ p.label }} applicants stored</span>
+    {% endfor %}
+    <span><b>{{ ref_pings|num }}</b> referrer page views stored</span>
+  </div>
+</section>
+
+{# ---------- referrer ping log history ---------- #}
+{% if spend_history %}
+<section class="card pad0">
+  <div style="padding:18px 20px 0">
+    <div class="eyebrow">Audit trail</div>
+    <h2 class="display">Media spend <span class="serif-it">uploads</span></h2>
+    <div class="sub" style="margin:5px 0 14px">Each upload <b>replaces</b> the months it
+      covers rather than adding to them — spend is a restatement of a period, not an
+      event log. Feeds the <a href="/cost?program={{ program.key }}">Cost</a> tab.</div>
+  </div>
+  <div class="tablewrap">
+  <table>
+    <thead><tr>
+      <th class="chan">When</th><th class="chan">File</th><th class="chan">Platform</th>
+      <th class="chan">Program</th><th>Rows</th><th>Total</th><th class="chan">Period</th>
+    </tr></thead>
+    <tbody>
+      {% for h in spend_history %}
+        <tr>
+          <td class="chan">{{ h['uploaded_at'] }}</td>
+          <td class="chan">{{ h['filename'] }}</td>
+          <td class="chan">{{ h['platform'] }}</td>
+          <td class="chan">{{ programs[h['program']].label if h['program'] in programs else h['program'] }}</td>
+          <td>{{ h['row_count']|num }}</td>
+          <td>${{ '{:,.2f}'.format(h['total_cost']) }}</td>
+          <td class="chan">{{ h['period_start'] }} → {{ h['period_end'] }}</td>
+        </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  {% if coverage %}
+    <div class="note" style="margin:14px 20px 18px">Meta tags its links
+      <code>utm_content={{ '{{ad.id}}' }}</code>, so spend can be checked against the ping
+      log ad by ad. <b>{{ '%.1f'|format(coverage.spend_pct * 100) }}%</b> of Meta spend and
+      <b>{{ '%.1f'|format(coverage.pings_pct * 100) }}%</b> of Meta pings sit on ads both
+      sides know about ({{ coverage.matched_ads }} of {{ coverage.ads }} ads).
+      Nothing in the cost figures depends on this — it is the check that says the spend
+      file and the funnel still describe the same traffic. A sharp fall means they have
+      drifted apart.</div>
+  {% endif %}
+</section>
+{% endif %}
+
+{% if ref_history %}
+<section class="card pad0">
+  <div style="padding:18px 20px 0">
+    <div class="eyebrow">Audit trail</div>
+    <h2 class="display">Referrer ping log <span class="serif-it">uploads</span></h2>
+    <div class="sub" style="margin:5px 0 14px">One row per page view; de-duplicated
+      on person + timestamp + referrer + URL. Feeds the
+      <a href="/referrers?program={{ program.key }}">Referrers</a> tab.</div>
+  </div>
+  <div class="tablewrap">
+  <table>
+    <thead><tr>
+      <th class="chan">When</th><th class="chan">File</th>
+      <th>Rows</th><th>New views</th><th>Duplicate</th><th>People</th>
+      <th class="chan">Notes</th>
+    </tr></thead>
+    <tbody>
+      {% for h in ref_history %}
+        <tr>
+          <td class="chan">{{ h['uploaded_at'] }}</td>
+          <td class="chan">{{ h['filename'] }}</td>
+          <td>{{ h['row_count']|num }}</td>
+          <td>{{ h['pings_new']|num }}</td>
+          <td>{{ h['pings_duplicate']|num }}</td>
+          <td>{{ h['people']|num }}</td>
+          <td class="chan" style="white-space:normal;min-width:260px">
+            <span class="hint">{{ h['notes'] or '—' }}</span>
+          </td>
+        </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+</section>
+{% endif %}
+
+{# ---------- unclassified UTMs ---------- #}
+<section class="card pad0">
+  <div style="padding:18px 20px 0">
+    <div class="eyebrow">Review queue</div>
+    <h2 class="display">Unrecognised UTM <span class="serif-it">sources</span></h2>
+    <div class="note">Pings that matched no classification rule, currently counted
+      under <b>{{ UNRESOLVED }}</b>. When a new network appears (Snapchat, say) it
+      surfaces here instead of being silently absorbed — send them over and a rule
+      gets added to the taxonomy. Marking one <i>reviewed</i> only clears the badge;
+      it does not change any number.</div>
+  </div>
+
+  {% if unknown %}
+    <div class="tablewrap">
+    <table>
+      <thead><tr>
+        <th class="chan">UTM Source</th><th class="chan">UTM Medium</th>
+        <th class="chan">UTM Campaign</th><th>Pings</th><th>People</th>
+        <th class="chan">Last seen</th><th class="chan">Status</th>
+      </tr></thead>
+      <tbody>
+        {% for u in unknown %}
+          <tr>
+            <td class="chan"><code>{{ u['source'] or '—' }}</code></td>
+            <td class="chan"><code>{{ u['medium'] or '—' }}</code></td>
+            <td class="chan"><code>{{ u['campaign'] or '—' }}</code></td>
+            <td>{{ u['ping_count']|num }}</td>
+            <td>{{ u['applicant_count']|num }}</td>
+            <td class="chan">{{ u['last_seen_at'] }}</td>
+            <td class="chan">
+              {% if u['acknowledged'] %}
+                <span class="chip plain">reviewed</span>
+              {% else %}
+                <form method="post" action="/unknown/{{ u['id'] }}/ack" style="display:inline">
+                  <button class="btn ghost sm" type="submit">Mark reviewed</button>
+                </form>
+              {% endif %}
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    </div>
+  {% else %}
+    <div class="hint" style="padding:0 20px 18px">Nothing unclassified — every ping
+      matched a rule.</div>
+  {% endif %}
+</section>
+
+{# ---------- history ---------- #}
+<section class="card pad0">
+  <div style="padding:18px 20px 0">
+    <div class="eyebrow">Audit trail</div>
+    <h2 class="display">Upload <span class="serif-it">history</span></h2>
+    <div class="sub" style="margin:5px 0 14px">Most recent first. Every run is dated,
+      which is what period-over-period comparison will read from.</div>
+  </div>
+
+  {% if history %}
+    <div class="tablewrap">
+    <table>
+      <thead><tr>
+        <th class="chan">When</th><th class="chan">File</th><th class="chan">Program</th>
+        <th>Rows</th><th>New</th><th>Updated</th><th>New pings</th><th>Duplicate</th>
+        <th class="chan">Notes</th>
+      </tr></thead>
+      <tbody>
+        {% for h in history %}
+          <tr>
+            <td class="chan">{{ h['uploaded_at'] }}</td>
+            <td class="chan">{{ h['filename'] }}</td>
+            <td class="chan">{{ programs[h['program']].label }}</td>
+            <td>{{ h['row_count']|num }}</td>
+            <td>{{ h['applicants_new']|num }}</td>
+            <td>{{ h['applicants_updated']|num }}</td>
+            <td>{{ h['pings_new']|num }}</td>
+            <td>{{ h['pings_duplicate']|num }}</td>
+            <td class="chan" style="white-space:normal;min-width:300px">
+              <span class="hint">{{ h['notes'] or '—' }}</span>
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    </div>
+  {% else %}
+    <div class="hint" style="padding:0 20px 18px">No uploads yet.</div>
+  {% endif %}
+</section>
+
+{% endblock %}
