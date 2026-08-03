@@ -47,7 +47,7 @@ Summer: 4,483 → 954 → 387.
 FY 2025/26 paid media: **$288,357** (Google $140,222 · Meta $148,135).
 Blended first-touch cost per started app ≈ **$51**.
 
-**67 tests** pass against the real sample files. If a change moves any canonical
+**68 tests** pass against the real sample files. If a change moves any canonical
 number above, that is a regression until proven otherwise.
 
 ---
@@ -98,6 +98,15 @@ Rollback lives in Render's dashboard, not git.
   point — on current data Meta costs $11.4k per admit on first touch but
   $24.7k on last, i.e. it starts conversations far better than it finishes
   them, while Google is steady across both.
+- **One channel, one colour, everywhere.** `taxonomy.channel_slot` is the
+  single source of truth, shared by every chart via `AADA_CHANNEL_COLOURS`.
+  Charts used to assign hues by position within whatever was on screen, so
+  ticking one extra series repainted the rest — Meta was green in one section
+  and orange in the donut. There are 13 channels and 8 validated hues: the 8
+  slots are reserved for the 8 that carry volume, and the tail draws in neutral
+  grey rather than wrapping (which would make Spotify wear Meta's green).
+  A sub-source deliberately shares its parent's slot, drawn desaturated and
+  dotted — that is the one intended kind of colour sharing.
 - **Spend maps to channels with no mapping table.** Google's `Campaign type` and
   Meta's `Platform` land directly on the app's existing sub-sources. Google's
   `utm_campaign` values are hand-made codes that do *not* match its campaign

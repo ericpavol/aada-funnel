@@ -67,6 +67,36 @@
     return s;
   }
 
+  /* THE colour rule, in one place.
+   *
+   * A slot is the channel's canonical palette index (see taxonomy.channel_slot),
+   * never its position in whatever is currently on screen. `null` means the
+   * channel is past the 8 validated hues: it draws in neutral grey rather than
+   * reusing a major channel's colour, so nothing masquerades as Meta or Google.
+   */
+  var SUB_SEP = " \u203a ";      // "Google (Paid) > PMax"
+
+  /** Slot for an entity NAME, resolving a sub-source to its parent. */
+  function slotForName(name) {
+    var map = window.AADA_CHANNEL_COLOURS || {};
+    if (!name) return null;
+    var i = name.indexOf(SUB_SEP);
+    var parent = i === -1 ? name : name.slice(0, i);
+    var slot = map[parent];
+    return slot == null ? null : slot;
+  }
+
+  function isSubName(name) {
+    return !!name && name.indexOf(SUB_SEP) !== -1;
+  }
+
+  function slotColour(t, slot, isSub) {
+    var base = (slot == null) ? t.ink3 : t.series[slot % 8];
+    // A sub-source is its OWN parent's hue, desaturated -- subordinate but
+    // still recognisably part of the same family.
+    return isSub ? mixToward(base, t.ink3, .45) : base;
+  }
+
   function tokens() {
     return {
       series: palette(),
@@ -442,15 +472,14 @@
       // not toward the surface. Mixing toward the surface only lightens it and
       // still reads as "another parent"; mixing toward grey drops the chroma so
       // a child is obviously subordinate while staying in its parent's family.
-      function hueFor(f) {
+      function slotOf(f) {
         var map = window.AADA_CHANNEL_COLOURS || {};
         // `parent` on a sub row is the parent ROW object, not its name.
         var parent = f.isSub
           ? ((f.parent && f.parent.channel) || "")
           : f.label;
         var slot = map[parent];
-        if (slot == null) return t.accent;
-        return t.series[slot % 8];
+        return slot == null ? null : slot;
       }
 
       return new Chart(el, {
@@ -465,12 +494,11 @@
             label: opts.seriesLabel,
             data: flat.map(function (f) { return f.value; }),
             backgroundColor: flat.map(function (f) {
-              if (f.muted) return t.grid;
-              var hue = hueFor(f);
-              return f.isSub ? mixToward(hue, t.ink3, .45) : hue;
+              return f.muted ? t.grid : slotColour(t, slotOf(f), f.isSub);
             }),
             borderColor: flat.map(function (f) {
-              return f.muted ? t.grid : mixToward(hueFor(f), t.ink, .3);
+              return f.muted ? t.grid
+                : mixToward(slotColour(t, slotOf(f), f.isSub), t.ink, .3);
             }),
             borderWidth: 1,
             borderRadius: 4,
@@ -621,7 +649,11 @@
           labels: rows.map(function (r) { return r.channel; }),
           datasets: [{
             data: rows.map(function (r) { return r.n; }),
-            backgroundColor: rows.map(function (_, i) { return t.series[i % 8]; }),
+            // Was `i % 8` -- coloured by rank, so Meta was orange here and
+            // green everywhere else. Now the channel's own slot.
+            backgroundColor: rows.map(function (r, i) {
+              return slotColour(t, r.colour_index, false);
+            }),
             borderColor: t.surface,
             borderWidth: 2,
             hoverOffset: 12,
@@ -705,7 +737,7 @@
               // Colour follows the entity's canonical slot, not its position in
               // the current selection, so picking a sub-source cannot repaint
               // the parents already on screen.
-              backgroundColor: t.series[s.colour_index % 8],
+              backgroundColor: slotColour(t, s.colour_index, s.is_sub),
               borderRadius: 3,
               borderSkipped: "start",
               barPercentage: .9,
@@ -890,14 +922,16 @@
       var unit = payload.measure === "people" ? "people" : "tags";
 
       var datasets = payload.series.map(function (s) {
-        var colour = t.series[s.colour_index % 8];
+        var colour = slotColour(t, s.colour_index, s.is_sub);
         return {
           label: s.label,
           data: s.data,
           borderColor: colour,
           backgroundColor: colour,
-          borderWidth: s.current ? 2 : 1.25,
-          borderDash: s.current ? [] : [5, 4],
+          borderWidth: s.current ? (s.is_sub ? 1.5 : 2) : 1.25,
+          // Dashes already mean "a past fiscal year", so a sub-source is
+          // dotted instead -- two different distinctions, two different marks.
+          borderDash: s.current ? (s.is_sub ? [2, 3] : []) : [5, 4],
           pointRadius: 0,
           pointHoverRadius: 5,
           pointHoverBorderWidth: 2,
@@ -1087,7 +1121,7 @@
             return {
               label: s.name,
               data: s.data,
-              backgroundColor: t.series[s.colour_index % 8],
+              backgroundColor: slotColour(t, s.colour_index, s.is_sub),
               borderRadius: 3,
               borderSkipped: "bottom",
               barPercentage: .78,
@@ -1219,8 +1253,8 @@
       warn.hidden = !dropped.length;
       warn.textContent = dropped.length
         ? dropped.length + " selected but not drawn (" + dropped.join(", ") +
-          "). The palette has eight slots and a repeated colour would read as " +
-          "the same series."
+          "). Eight series is the readable limit for one chart; beyond " +
+          "that the lines overlap more than they inform."
         : "";
     }
   }
@@ -1250,7 +1284,8 @@
       e.lines.forEach(function (l) {
         series.push({
           group: e.name, fy: l.fy, fy_label: l.fy_label, current: l.current,
-          data: l.data, total: l.total, colour_index: i % 8,
+          data: l.data, total: l.total,
+          colour_index: slotForName(e.name), is_sub: isSubName(e.name),
           label: e.name + " · " + l.fy_label
         });
       });
@@ -1267,7 +1302,7 @@
       series: kept.map(function (e, i) {
         return {
           name: e.name, values: e.values, counts: e.counts,
-          colour_index: i % 8
+          colour_index: slotForName(e.name), is_sub: isSubName(e.name)
         };
       })
     };
@@ -1573,7 +1608,8 @@
       spendChart({
         labels: payload.labels,
         series: kept.map(function (e, i) {
-          return { name: e.name, data: e.data, colour_index: i % 8,
+          return { name: e.name, data: e.data,
+                   colour_index: slotForName(e.name),
                    is_sub: e.is_sub };
         })
       });

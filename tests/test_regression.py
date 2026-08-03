@@ -686,17 +686,23 @@ def test_started_apps_reference_band(ft_db):
     assert tags["tags_total"] > band["total"] * 3
 
 
-def test_timeline_never_reuses_a_colour_for_two_categories(ft_db):
-    """The palette has 8 slots. A 9th category must be reported as undrawn, not
-    handed a hue already in use — a repeated colour reads as the same category."""
+def test_timeline_never_reuses_a_colour_for_two_channels(ft_db):
+    """Two different PARENT channels must never share a hue — a repeated colour
+    reads as the same channel. A sub-source deliberately DOES share its parent's
+    slot (drawn as a desaturated, dotted variant), because it belongs to that
+    parent; that is the one intended kind of sharing."""
     program = programs.get("ft")
     tl = metrics.tag_timeline(ft_db, program, "program = ?", ["ft"], bucket="month")
     by_colour = {}
     for s in tl["series"]:
-        assert 0 <= s["colour_index"] < 8
-        by_colour.setdefault(s["colour_index"], set()).add(s["group"])
-    for idx, groups in by_colour.items():
-        assert len(groups) == 1, "colour %d shared by %s" % (idx, sorted(groups))
+        assert s["colour_index"] is None or 0 <= s["colour_index"] < 8
+        # a sub-source shares its parent's slot on purpose
+        parent = s["group"].split(taxonomy.SUB_SEP)[0]
+        by_colour.setdefault(s["colour_index"], set()).add(parent)
+    for idx, parents in by_colour.items():
+        if idx is None:
+            continue          # the grey tail is shared by design
+        assert len(parents) == 1, "colour %d shared by %s" % (idx, sorted(parents))
     assert len({s["group"] for s in tl["series"]}) <= 8
     # asking for more than the palette holds is clamped, not silently cycled
     wide = metrics.tag_timeline(ft_db, program, "program = ?", ["ft"],
@@ -1575,3 +1581,52 @@ def test_stored_winter_terms_are_migrated_on_connect(tmp_path):
         "SELECT COUNT(*) FROM applicants WHERE term='January 2026 (Spring)'"
     ).fetchone()[0] == stale
     conn.close()
+
+
+def test_one_channel_wears_one_colour_everywhere(ft_db):
+    """The whole point of the canonical slot map: Meta is the same green on the
+    timeline, the stage-presence chart, the first-touch donut and the spend
+    trend. Colour identifies the CHANNEL; it must never depend on which series
+    happen to be on screen, or on rank within the current view."""
+    conn = ft_db
+    for path, plat in ((GOOGLE_SPEND_FILE, spend.GOOGLE),
+                       (META_SPEND_FILE, spend.META)):
+        rows, meta = spend.parse(path, plat, os.path.basename(path))
+        spend.store(conn, "ft", rows, meta, "")
+
+    prog = programs.get("ft")
+    flt = filters.Filters(prog)
+    apps, flags = metrics.load_population(conn, prog, flt.where, flt.params)
+    pings = metrics.load_pings(conn, [a["id"] for a in apps])
+    anym = metrics.build_matrix(prog, apps, flags, pings, "any")
+
+    META = spend.META_CHANNEL
+    want = taxonomy.channel_slot(META)
+    assert want is not None
+
+    tl = metrics.tag_timeline(conn, prog, flt.where, flt.params, bucket="month")
+    tl_slots = {s["colour_index"] for s in tl["series"] if s["group"] == META}
+    assert tl_slots == {want}
+
+    pen = metrics.penetration_series(prog, anym)
+    pen_slots = {s["colour_index"] for s in pen["series"] if s["name"] == META}
+    assert pen_slots == {want}
+
+    trend = metrics.spend_trend(conn, prog, cap=False)
+    tr_slots = {s["colour_index"] for s in trend["series"] if s["name"] == META}
+    assert tr_slots == {want}
+
+    # ...and it does not move when the selection changes around it.
+    narrow = metrics.tag_timeline(conn, prog, flt.where, flt.params,
+                                  bucket="month", picked=[META])
+    assert {s["colour_index"] for s in narrow["series"]} == {want}
+
+    # A sub-source shares its parent's slot, by design.
+    sub = taxonomy.sub_name(META, "Instagram")
+    assert taxonomy.channel_slot(sub) == want
+
+    # Channels past the 8 validated hues get no slot rather than reusing one.
+    assert taxonomy.channel_slot("Spotify (Paid Audio)") is None
+    majors = [c for c, _s in taxonomy.TAXONOMY[:8]]
+    slots = [taxonomy.channel_slot(c) for c in majors]
+    assert sorted(slots) == list(range(8)), "the 8 majors must not collide"

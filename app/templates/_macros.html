@@ -93,7 +93,7 @@
     </div>
   </div>
 </details>
-<div class="note warn stree-drop" data-dropped{{ '' if dropped else ' hidden' }}>{% if dropped %}{{ dropped|length }} selected but not drawn ({{ dropped|join(', ') }}). The palette has eight slots and a repeated colour would read as the same series.{% endif %}</div>
+<div class="note warn stree-drop" data-dropped{{ '' if dropped else ' hidden' }}>{% if dropped %}{{ dropped|length }} selected but not drawn ({{ dropped|join(', ') }}). Eight series is the readable limit for one chart; beyond that the lines overlap more than they inform.{% endif %}</div>
 </div>
 {% endmacro %}
 

@@ -103,3 +103,41 @@ def unknown_taxonomy_keys(present_keys):
         for sub in subs:
             known.add((parent, sub))
     return sorted(set(present_keys) - known)
+
+# --------------------------------------------------------------------------
+# colour slots
+# --------------------------------------------------------------------------
+# ONE mapping of channel -> palette slot, used by every chart on every page.
+#
+# The rule this enforces is "colour identifies the entity, never its rank".
+# Charts used to assign slots by position within whatever was currently on
+# screen, so ticking one extra series repainted all the others -- Meta could be
+# green in one section and amber in the next.
+#
+# There are 13 parent channels and only 8 validated hues. Wrapping with % 8
+# would make Spotify wear Meta's green, which is the same confusion in a new
+# place. Instead the 8 slots are reserved for the 8 channels that actually
+# carry volume (the first 8 in TAXONOMY), and the tail returns None, meaning
+# "draw me in neutral grey". That is honest rather than misleading, and grey is
+# arguably the RIGHT colour for "No UTM (untracked)" -- the absence of
+# attribution should not look like a channel.
+PALETTE_SLOTS = 8
+_CHANNEL_SLOT = {ch: i for i, (ch, _subs) in enumerate(TAXONOMY)
+                 if i < PALETTE_SLOTS}
+
+
+def channel_slot(name):
+    """-> 0..7 for a channel with a reserved hue, or None for the grey tail.
+
+    Accepts a sub-source name ("Google (Paid) > PMax") and returns its PARENT's
+    slot, so a child is always a shade of its own parent.
+    """
+    if not name:
+        return None
+    parent = name.split(SUB_SEP)[0] if SUB_SEP in name else name
+    return _CHANNEL_SLOT.get(parent)
+
+
+def channel_slot_map():
+    """The full mapping, for handing to the browser."""
+    return dict(_CHANNEL_SLOT)

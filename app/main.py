@@ -285,10 +285,11 @@ def _ctx(request, conn, program, flt, **extra):
     ctx = {
         "request": request,
         "program": program,
-        # Canonical taxonomy position -> palette slot. Built here so every
-        # template and chart reads the same mapping.
-        "channel_colours": {ch: i % 8 for i, (ch, _subs)
-                            in enumerate(taxonomy.TAXONOMY)},
+        # THE channel -> palette slot map, shared by every chart. Channels
+        # past the 8 validated hues are absent from it deliberately; the client
+        # draws those in neutral grey rather than reusing a major channel's
+        # colour. See taxonomy.channel_slot.
+        "channel_colours": taxonomy.channel_slot_map(),
         "fy_years": fy_years,
         "fy_active": (filters.fiscal_year_of(flt.date_from)
                       if flt.date_field == filters.DEFAULT_DATE_FIELD
@@ -455,11 +456,13 @@ def overview(request: Request):
             key=lambda r: -r["n"],
         )
         top_ft, rest = first_parents[:9], first_parents[9:]
-        chart_first_touch = [{"channel": r["channel"], "n": r["n"]} for r in top_ft]
+        chart_first_touch = [{"channel": r["channel"], "n": r["n"],
+                              "colour_index": taxonomy.channel_slot(r["channel"])}
+                             for r in top_ft]
         if rest:
             chart_first_touch.append(
                 {"channel": "Other (%d channels)" % len(rest),
-                 "n": sum(r["n"] for r in rest)})
+                 "n": sum(r["n"] for r in rest), "colour_index": None})
 
         # Stage-presence chart: parents by default, sub-sources opt-in.
         pen_tree = metrics.matrix_tree(any_touch)

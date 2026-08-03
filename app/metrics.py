@@ -525,7 +525,10 @@ def tag_timeline(conn, program, where_sql, params, picked=None, years=None,
     # assigned across the KEPT set only — indexing over `ranked` could hand a
     # kept category an index past 8 and wrap it onto a colour already in use.
     order = taxonomy.canonical_order_index(kept)
-    colour_index = {g: i for i, g in enumerate(order)}
+    # Canonical slot, NOT position within `kept`. Assigning by position meant
+    # ticking one extra series repainted every other line -- Meta could be green
+    # here and amber after one click. None = the grey tail (see taxonomy).
+    colour_index = {g: taxonomy.channel_slot(g) for g in order}
     # Two orderings, because they answer two different questions and the client
     # has to reproduce both:
     #   rank   — by volume: WHICH eight survive when more than eight are ticked
@@ -536,7 +539,8 @@ def tag_timeline(conn, program, where_sql, params, picked=None, years=None,
     torder = {g: i for i, g in enumerate(
         taxonomy.canonical_order_index(list(totals)))}
     if cap:
-        assert all(i < 8 for i in colour_index.values()), "palette slot overflow"
+        assert all(i is None or i < 8 for i in colour_index.values()), \
+            "palette slot overflow"
 
     newest = max(years_seen) if years_seen else None
     series = []
@@ -551,7 +555,8 @@ def tag_timeline(conn, program, where_sql, params, picked=None, years=None,
                 "current": fyear == newest,
                 "rank": rank.get(grp, 10 ** 6),
                 "torder": torder.get(grp, 10 ** 6),
-                "colour_index": colour_index.get(grp, 0) % 8,
+                "colour_index": colour_index.get(grp),
+                "is_sub": taxonomy.SUB_SEP in grp,
                 "total": sum(data.values()),
                 "data": [data.get(i, 0) for i in range(n_buckets)],
             })
@@ -768,7 +773,7 @@ def penetration_series(program, matrix, selected=None, limit=8, cap=True):
             # See tag_timeline: rank decides which survive, torder the colour.
             "rank": vrank[name],
             "torder": i,
-            "colour_index": i % 8,
+            "colour_index": taxonomy.channel_slot(name),
             "n": row["n"],
             "values": [row["penetration_pct"][k] for k in program.stage_keys],
             "counts": [row["counts"][k] for k in program.stage_keys],
@@ -1112,7 +1117,7 @@ def spend_trend(conn, program, months=None, picked=None, cap=True, limit=8):
 
     return {
         "labels": keys,
-        "series": [{"name": n, "colour_index": i % 8,
+        "series": [{"name": n, "colour_index": taxonomy.channel_slot(n),
                     "rank": rank.get(n, 10 ** 6), "torder": torder.get(n, 10 ** 6),
                     "is_sub": taxonomy.SUB_SEP in n,
                     "data": [by.get((m, n), 0.0) for m in keys],
