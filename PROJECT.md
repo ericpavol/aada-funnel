@@ -89,10 +89,14 @@ Rollback lives in Render's dashboard, not git.
   applied **by default** to the newest year with data. Without it the app
   silently mixed intake years. "All time" is one click away, so it's a starting
   point rather than a hidden filter.
-- **First touch vs any touch is a user-facing toggle**, not a fixed choice —
-  because the channel that closes someone often isn't the one that found them.
-  First touch sums; any touch overlaps and its blended figure comes from a **set
-  union**, never a column sum.
+- **Three attribution lenses, as a user-facing toggle**: first touch (what
+  found them), last touch (what closed them), any touch (everything they
+  touched). First and last each put a person in exactly one channel and
+  therefore **sum**; any touch overlaps and its blended figure comes from a
+  **set union**, never a column sum. The disagreement between lenses is the
+  point — on current data Meta costs $11.4k per admit on first touch but
+  $24.7k on last, i.e. it starts conversations far better than it finishes
+  them, while Google is steady across both.
 - **Spend maps to channels with no mapping table.** Google's `Campaign type` and
   Meta's `Platform` land directly on the app's existing sub-sources. Google's
   `utm_campaign` values are hand-made codes that do *not* match its campaign

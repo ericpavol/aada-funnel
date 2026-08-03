@@ -1326,7 +1326,7 @@ def test_first_and_any_touch_cost_answer_different_questions(ft_db):
     assert reach["admitted"] < sum(r["stage_n"] for r in any_["rows"])
 
 
-def test_cost_payload_ships_both_lenses_for_every_stage(ft_db):
+def test_cost_payload_ships_every_lens_for_every_stage(ft_db):
     """The toggle and the stage chips both redraw client-side, so the payload
     has to carry stages x attributions with no extra queries."""
     conn = ft_db
@@ -1343,11 +1343,13 @@ def test_cost_payload_ships_both_lenses_for_every_stage(ft_db):
         prog.stage_keys,
         reach=metrics.paid_reach(prog, apps, flags, pings,
                                  [spend.GOOGLE_CHANNEL]))
-    assert set(payload) == {"first", "any"}
+    assert set(payload) == {"first", "last", "any"}
     for attr in payload:
         assert set(payload[attr]) == set(prog.stage_keys)
         for k, v in payload[attr].items():
-            assert v["rows_sum"] == (attr == "first")
+            # Only any-touch overlaps; first and last each put a person in
+            # exactly one channel, so both sum.
+            assert v["rows_sum"] == (attr != "any")
             assert v["stage_label"] == prog.stage_labels[k]
 
 
@@ -1433,3 +1435,49 @@ def test_upload_kind_is_detected_from_headers_not_filenames():
     # Unreadable file -> falls back to the name rather than raising.
     kind, conf, _why = ingest.sniff_kind("Ping Data - Summer.xlsx", b"not a workbook")
     assert (kind, conf) == (ingest.KIND_SUMMER, "guess")
+
+
+def test_last_touch_partitions_people_like_first_touch(ft_db):
+    """Last touch answers "what closed them" where first touch answers "what
+    found them". Both put a person in exactly ONE channel, so both sum -- only
+    any-touch overlaps. Getting this wrong would let the last-touch column be
+    silently treated as un-summable, or worse, let any-touch be summed."""
+    conn = ft_db
+    for path, plat in ((GOOGLE_SPEND_FILE, spend.GOOGLE),
+                       (META_SPEND_FILE, spend.META)):
+        rows, meta = spend.parse(path, plat, os.path.basename(path))
+        spend.store(conn, "ft", rows, meta, "")
+
+    prog = programs.get("ft")
+    flt = filters.Filters(prog)
+    apps, flags = metrics.load_population(conn, prog, flt.where, flt.params)
+    pings = metrics.load_pings(conn, [a["id"] for a in apps])
+    M = {t: metrics.build_matrix(prog, apps, flags, pings, t)
+         for t in ("any", "first", "last")}
+    reach = metrics.paid_reach(prog, apps, flags, pings,
+                               [spend.GOOGLE_CHANNEL, spend.META_CHANNEL])
+
+    def cost(attr):
+        return metrics.cost_by_channel(
+            conn, prog, M["any"], M["first"], "admitted", attribution=attr,
+            reach=reach, last_matrix=M["last"])
+
+    first, last, any_ = cost("first"), cost("last"), cost("any")
+
+    assert last["rows_sum"] is True and first["rows_sum"] is True
+    assert any_["rows_sum"] is False
+
+    # Last touch sums, exactly like first touch.
+    assert sum(r["stage_n"] for r in last["rows"]) == last["stage_total"]
+    # ...and is a genuinely different answer, not a copy of first touch.
+    assert last["stage_total"] != first["stage_total"]
+
+    # Every lens divides the SAME spend -- only the denominator moves.
+    assert (last["total_cost"] == pytest.approx(first["total_cost"], abs=0.02)
+            == pytest.approx(any_["total_cost"], abs=0.02))
+
+    # Any touch credits the most people, so it is always the cheapest lens.
+    assert any_["stage_total"] > first["stage_total"]
+    assert any_["stage_total"] > last["stage_total"]
+    assert any_["blended_per_stage"] < first["blended_per_stage"]
+    assert any_["blended_per_stage"] < last["blended_per_stage"]

@@ -903,19 +903,24 @@ def paid_reach(program, applicants, flags, pings_by_app, channels):
 
 def cost_by_channel(conn, program, any_matrix, first_matrix, stage,
                     months=None, include_undated=True, attribution="first",
-                    reach=None):
+                    reach=None, last_matrix=None):
     """Spend joined to funnel outcomes, per channel and sub-source.
 
     `attribution` picks which question the denominators answer:
 
-      * "first" -- each person is credited to the channel that FOUND them. Rows
-                   partition people, so they sum to a true blended CPA. Best for
-                   "what did acquiring this person cost".
-      * "any"   -- each person is credited to EVERY paid channel they touched.
-                   Best for "which channel was in the room when they converted",
-                   because the closer is often not the finder. Rows overlap by
-                   design and must never be summed: the blended figure comes from
-                   `reach`, a set union that counts a Google-and-Meta person once.
+      * "first" -- credited to the channel that FOUND them. Best for "what did
+                   acquiring this person cost".
+      * "last"  -- credited to the channel they touched LAST before converting.
+                   Best for "what closed them". Like first touch it puts each
+                   person in exactly one channel, so it sums the same way.
+      * "any"   -- credited to EVERY paid channel they touched. Rows overlap by
+                   design and must never be summed: the blended figure comes
+                   from `reach`, a set union that counts a Google-and-Meta
+                   person once.
+
+    First and last are the two ends of the same journey and will disagree
+    whenever a channel is better at starting conversations than finishing them
+    (or vice versa) -- that disagreement is the point of having both.
 
     Either way `cost_per_assist` stays any-touch, so the two lenses are visible
     side by side without switching.
@@ -957,7 +962,11 @@ def cost_by_channel(conn, program, any_matrix, first_matrix, stage,
     # any-touch counts are kept for the per-row "cost per assist" column only:
     # summing them across channels double-counts everyone who touched two paid
     # channels, which is exactly what a blended figure must not do.
-    credit = first_matrix if attribution == "first" else any_matrix
+    # "last" falls back to first-touch only if no last-touch matrix was built,
+    # which would be a caller bug rather than a supported mode.
+    credit = {"first": first_matrix,
+              "any": any_matrix,
+              "last": last_matrix or first_matrix}[attribution]
     first_by, first_stage = {}, {}
     for r in credit["rows"]:
         key = r["channel"] if r["is_parent"] else (r["channel"], r["sub_source"])
@@ -1019,7 +1028,7 @@ def cost_by_channel(conn, program, any_matrix, first_matrix, stage,
 
     out.sort(key=lambda r: -r["cost"])
     total_cost = sum(r["cost"] for r in out)
-    if attribution == "first":
+    if attribution != "any":
         total_first = sum(r["first_n"] for r in out)
         total_stage = sum(r["stage_n"] for r in out)
     else:
@@ -1039,7 +1048,7 @@ def cost_by_channel(conn, program, any_matrix, first_matrix, stage,
         "blended_per_stage": (total_cost / total_stage) if total_stage else None,
         "stage_label": program.stage_labels[stage],
         "attribution": attribution,
-        "rows_sum": attribution == "first",
+        "rows_sum": attribution != "any",
     }
 
 
@@ -1130,11 +1139,12 @@ def _taxonomy_order(names):
 
 
 def cost_stage_payload(conn, program, any_matrix, first_matrix, stage_keys,
-                       months=None, reach=None):
-    """cost_by_channel for every stage AND both attributions, so the chips and
-    the first/any toggle both redraw in the browser. Matrices are already in
-    memory, so this costs one spend query, not 2 x stages of them."""
+                       months=None, reach=None, last_matrix=None):
+    """cost_by_channel for every stage AND every attribution, so the stage chips
+    and the attribution toggle both redraw in the browser. The matrices are
+    already in memory, so this costs one spend query, not stages x lenses."""
     return {a: {k: cost_by_channel(conn, program, any_matrix, first_matrix, k,
-                                   months=months, attribution=a, reach=reach)
+                                   months=months, attribution=a, reach=reach,
+                                   last_matrix=last_matrix)
                 for k in stage_keys}
-            for a in ("first", "any")}
+            for a in ("first", "last", "any")}

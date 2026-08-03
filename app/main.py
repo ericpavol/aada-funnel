@@ -363,6 +363,7 @@ def overview(request: Request):
         overall = metrics.overall_funnel(program, flags)
         any_touch = metrics.build_matrix(program, apps, flags, pings, "any")
         first_touch = metrics.build_matrix(program, apps, flags, pings, "first")
+        last_touch = metrics.build_matrix(program, apps, flags, pings, "last")
         comparison = metrics.channel_comparison(program, any_touch, stage=cmp_stage)
         makeup = metrics.channel_makeup(program, any_touch, stage=mk_stage)
 
@@ -420,13 +421,14 @@ def overview(request: Request):
         # including Started — cost per started app is the headline number here,
         # not a degenerate 100% row.
         cost_stage = _stage_of(q, "cst", program.stage_keys, "started")
-        cost_attr = _stage_of(q, "ca", ("first", "any"), "first")
+        cost_attr = _stage_of(q, "ca", ("first", "last", "any"), "first")
         cost_reach = _paid_reach(conn, program, apps, flags, pings)
         cost = _cost_view(conn, program, flt, any_touch, first_touch, cost_stage,
-                          attribution=cost_attr, reach=cost_reach)
+                          attribution=cost_attr, reach=cost_reach,
+                          last_matrix=last_touch)
         cost_payload = _cost_payload(conn, program, flt, any_touch, first_touch,
                                      program.stage_keys, cost["months"],
-                                     reach=cost_reach)
+                                     reach=cost_reach, last_matrix=last_touch)
 
         # Every stage ships with the page so the two "measured against" controls
         # redraw in the browser instead of costing a reload — the same trade the
@@ -655,10 +657,12 @@ ATTRIBUTIONS = [
     {"key": "first", "label": "First touch",
      "note": "credited to the channel that FOUND them — rows partition people, "
              "so they add up"},
+    {"key": "last", "label": "Last touch",
+     "note": "credited to the channel they touched LAST — what closed them. "
+             "Also one channel per person, so these add up too"},
     {"key": "any", "label": "Any touch",
-     "note": "credited to EVERY paid channel they touched — the closer is often "
-             "not the finder, so rows overlap and the total is a de-duplicated "
-             "count, not a sum"},
+     "note": "credited to EVERY paid channel they touched — rows overlap, so "
+             "the total is a de-duplicated count, not a sum"},
 ]
 
 
@@ -671,13 +675,13 @@ def _paid_reach(conn, program, apps, flags, pings):
 
 
 def _cost_payload(conn, program, flt, any_matrix, first_matrix, stage_keys,
-                  months, reach=None):
+                  months, reach=None, last_matrix=None):
     """Every stage x both attributions, so the chips AND the first/any toggle
     redraw in the browser. A few KB against a ~230 KB page, and no extra
     queries — the matrices are already in memory."""
     per = metrics.cost_stage_payload(
         conn, program, any_matrix, first_matrix, stage_keys, months=months,
-        reach=reach)
+        reach=reach, last_matrix=last_matrix)
 
     def pack(v):
         return {
@@ -704,12 +708,12 @@ def _cost_payload(conn, program, flt, any_matrix, first_matrix, stage_keys,
 
 
 def _cost_view(conn, program, flt, any_matrix, first_matrix, stage,
-               attribution="first", reach=None):
+               attribution="first", reach=None, last_matrix=None):
     """Everything both the Overview card and the Cost tab need."""
     months, all_months, narrowed = metrics.spend_months(conn, program, flt)
     cost = metrics.cost_by_channel(
         conn, program, any_matrix, first_matrix, stage, months=months,
-        attribution=attribution, reach=reach)
+        attribution=attribution, reach=reach, last_matrix=last_matrix)
     cost.update({
         "months": months, "all_months": all_months, "narrowed": narrowed,
         "has_spend": bool(cost["rows"]),
@@ -731,12 +735,15 @@ def cost(request: Request):
         pings = metrics.load_pings(conn, [a["id"] for a in apps])
         any_touch = metrics.build_matrix(program, apps, flags, pings, "any")
         first_touch = metrics.build_matrix(program, apps, flags, pings, "first")
-        cost_attr = _stage_of(q, "ca", ("first", "any"), "first")
+        last_touch = metrics.build_matrix(program, apps, flags, pings, "last")
+        cost_attr = _stage_of(q, "ca", ("first", "last", "any"), "first")
         cost_reach = _paid_reach(conn, program, apps, flags, pings)
         cost = _cost_view(conn, program, flt, any_touch, first_touch, stage,
-                          attribution=cost_attr, reach=cost_reach)
+                          attribution=cost_attr, reach=cost_reach,
+                          last_matrix=last_touch)
         cost_payload = _cost_payload(conn, program, flt, any_touch, first_touch,
-                                     stage_opts, cost["months"], reach=cost_reach)
+                                     stage_opts, cost["months"], reach=cost_reach,
+                                     last_matrix=last_touch)
 
         sp_tree = metrics.spend_tree(conn, program)
         sp_all = metrics.tree_names(sp_tree)
