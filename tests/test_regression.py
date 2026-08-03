@@ -1630,3 +1630,31 @@ def test_one_channel_wears_one_colour_everywhere(ft_db):
     majors = [c for c, _s in taxonomy.TAXONOMY[:8]]
     slots = [taxonomy.channel_slot(c) for c in majors]
     assert sorted(slots) == list(range(8)), "the 8 majors must not collide"
+
+
+def test_hidden_attribute_cannot_be_overridden_by_a_class_rule():
+    """The `hidden` attribute's `display:none` comes from the browser's own
+    stylesheet at the SAME specificity as a single class selector. Any class
+    that also declares `display` (.uploading, .filelist -- both introduced in
+    the same commit) silently wins the cascade, since author styles load after
+    the browser's defaults: the element shows from first paint regardless of
+    the attribute. This is exactly what put the "Importing..." spinner on
+    screen before a file was ever chosen.
+
+    The fix is one global rule that makes `hidden` win unconditionally, for
+    every element in the app, present or future -- not a per-class patch. This
+    test pins that the rule exists and stays strong enough to actually do that.
+    """
+    import re
+    from conftest import APP_ROOT
+    css = open(os.path.join(APP_ROOT, "app", "static", "app.css"),
+              encoding="utf-8").read()
+    assert re.search(r"\[hidden\]\s*\{[^}]*display\s*:\s*none\s*!important", css), \
+        "no strong [hidden] override rule found in app.css"
+
+    # And the two classes that exposed the bug both still declare `display`,
+    # which is exactly the shape the global rule has to defend against.
+    for cls in ("uploading", "filelist"):
+        assert re.search(r"\." + cls + r"\{[^}]*display\s*:", css), \
+            ".%s no longer sets display -- if that changed, confirm the " \
+            "[hidden] override is still needed for it" % cls

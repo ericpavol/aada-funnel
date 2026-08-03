@@ -47,7 +47,7 @@ Summer: 4,483 → 954 → 387.
 FY 2025/26 paid media: **$288,357** (Google $140,222 · Meta $148,135).
 Blended first-touch cost per started app ≈ **$51**.
 
-**68 tests** pass against the real sample files. If a change moves any canonical
+**69 tests** pass against the real sample files. If a change moves any canonical
 number above, that is a regression until proven otherwise.
 
 ---
@@ -152,6 +152,15 @@ public. Rollback lives in Render's dashboard, not git.
 
 ## Mistakes already made once — don't repeat
 
+- **`[hidden]` can be silently defeated by a class's own `display` rule.**
+  `.uploading` and `.filelist` (both from the multi-upload commit) declared
+  `display` unconditionally; a browser's `[hidden]{display:none}` default has
+  the same specificity as a single class, and author CSS loads after the
+  browser's own stylesheet — so the class won every time, and the "Importing…"
+  spinner showed from first paint regardless of the attribute. Fixed with one
+  global `[hidden]{display:none!important}` rule near the top of `app.css`
+  rather than patching the two classes, since the same mistake is easy to make
+  again in a future class.
 - **Summing any-touch rows for a blended cost.** Produced a cost-per-admit 44%
   too cheap ($1,122 vs the correct $1,988) and looked entirely plausible. Fixed
   with a set union; there is a test asserting the union is genuinely smaller than

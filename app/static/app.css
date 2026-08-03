@@ -144,6 +144,15 @@
 }
 
 *{box-sizing:border-box}
+/* The `hidden` attribute's default `display:none` comes from the browser's
+   OWN stylesheet at the same specificity as a single class selector — so any
+   class that also sets `display` (.uploading, .filelist, more later) wins the
+   cascade and silently defeats `hidden`, showing the element from first paint
+   regardless of the attribute. This is what made the upload spinner visible
+   before any file was even chosen. `!important` here is deliberate and the
+   right tool: `hidden` must always win, full stop, for every element in the
+   app, present or future — not something to re-litigate per class.  */
+[hidden]{display:none!important}
 html{color-scheme:light}
 :root[data-theme="dark"]{color-scheme:dark}
 body{
