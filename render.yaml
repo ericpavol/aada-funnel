@@ -12,7 +12,10 @@ services:
     plan: starter
     buildCommand: pip install -r requirements.txt
     startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
-    autoDeploy: true
+    # Deliberately off: reaching `main` on GitHub used to mean instantly live,
+    # with no gap to catch a mistake. Deploys are now triggered on purpose via
+    # Render's Sync Hook URL, not automatically on push.
+    autoDeploy: false
     disk:
       name: aada-funnel-data
       mountPath: /var/data

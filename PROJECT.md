@@ -78,9 +78,17 @@ handful of people or per-person accountability starts to matter.
 The GitHub repo is public; the data never enters it. The hosted instance starts
 empty and needs its own one-time upload via `/uploads`.
 
-### `dev` → `main` branch workflow
-Render auto-deploys `main` only. Work on `dev`; merging to `main` is the deploy.
-Rollback lives in Render's dashboard, not git.
+### `dev` → `main` branch workflow, deploy gated separately
+Work happens on `dev`; merging to `main` used to BE the deploy (Render
+auto-deployed on push). Turned off after a real slip: staying on `main` after a
+merge and committing the next change directly to it — reaching `main` and going
+live were the same instant, so there was no gap to catch it.
+
+Now `render.yaml` sets `autoDeploy: false`. Reaching `main` no longer deploys by
+itself — a deploy happens only when Render's Sync Hook URL is called
+explicitly, a separate deliberate step after the merge. The hook URL is a
+capability, not unlike an API key: never commit it, never paste it anywhere
+public. Rollback lives in Render's dashboard, not git.
 
 ---
 
