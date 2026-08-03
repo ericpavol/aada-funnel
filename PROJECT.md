@@ -33,9 +33,10 @@ preference.
    handoff's reference engine. Import it; never edit it. A SHA-256 test fails on
    drift — re-copy the file instead of patching it.
 3. **Any-touch channel rows overlap and must never be summed.** A person counts
-   in every channel they touched. First-touch rows *do* partition people and may
-   be summed. Conflating the two is the single most likely way to produce a
-   confidently wrong number here — it has already happened once (see below).
+   in every channel they touched. First- and last-touch rows *do* partition
+   people and may be summed. Conflating the two is the single most likely way to
+   produce a confidently wrong number here — it has already happened once (see
+   below).
 
 ## Current numbers (sanity check after any change)
 
@@ -46,7 +47,7 @@ Summer: 4,483 → 954 → 387.
 FY 2025/26 paid media: **$288,357** (Google $140,222 · Meta $148,135).
 Blended first-touch cost per started app ≈ **$51**.
 
-**61 tests** pass against the real sample files. If a change moves any canonical
+**64 tests** pass against the real sample files. If a change moves any canonical
 number above, that is a regression until proven otherwise.
 
 ---
