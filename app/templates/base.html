@@ -25,6 +25,9 @@
 
 <link rel="preload" href="/static/fonts/plex-400.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="preload" href="/static/fonts/instrumentserif-400.woff2" as="font" type="font/woff2" crossorigin>
+{# Lime "A" — the accent is the one visual constant across all seven
+   themes, so the tab icon stays recognisable whichever accent is set. #}
+<link rel="icon" href="{{ asset('favicon.svg') }}" type="image/svg+xml">
 <link rel="stylesheet" href="{{ asset('app.css') }}">
 <script src="{{ asset('chart.umd.js') }}"></script>
 <script src="{{ asset('app.js') }}"></script>

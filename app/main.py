@@ -809,52 +809,89 @@ SPEND_KINDS = {"spend_google": spend.GOOGLE, "spend_meta": spend.META}
 
 
 @app.post("/uploads")
-async def do_upload(request: Request, program: str = Form("ft"),
-                    file: UploadFile = File(...),
+async def do_upload(request: Request, program: str = Form("auto"),
+                    files: list[UploadFile] = File(...),
                     spend_program: str = Form("ft")):
+    """Accepts several files at once.
+
+    With program="auto" (the default) each file's type is detected from its
+    HEADERS -- see ingest.sniff_kind -- so a batch of mixed Slate and spend
+    exports can go up in one go. Choosing an explicit type forces it for every
+    file in the batch, which is the escape hatch when a guess is wrong.
+    """
     conn = get_conn()
     try:
-        if (program not in SPEND_KINDS and program != "referrals"
-                and program not in programs.PROGRAMS):
-            return RedirectResponse("/uploads?err=Unknown+export+type", status_code=303)
-        payload = await file.read()
-        if not payload:
-            return RedirectResponse("/uploads?err=Empty+file", status_code=303)
-
-        import io
-        digest = ingest.sha256_of(payload)
-        name = file.filename or "upload.xlsx"
-        try:
-            if program in SPEND_KINDS:
-                platform = SPEND_KINDS[program]
-                prog_key = (spend_program if spend_program in programs.PROGRAMS
-                            else "ft")
-                rows, meta = spend.parse(io.BytesIO(payload), platform, name)
-                result = spend.store(conn, prog_key, rows, meta, digest)
-                msg = ("%s: $%s across %s rows, %s month(s) -> %s (%s replaced)"
-                       % (name, format(result["total_cost"], ",.2f"),
-                          result["row_count"], len(result["months"]),
-                          programs.PROGRAMS[prog_key].label, result["replaced"]))
-                if result["warnings"]:
-                    msg += " · " + " ".join(result["warnings"])
-            elif program == "referrals":
-                result = ingest.ingest_referrals(
-                    conn, io.BytesIO(payload), name, digest)
-                msg = ("%s: %s page views -> %s new, %s already known, across %s people"
-                       % (name, result["row_count"], result["pings_new"],
-                          result["pings_duplicate"], result["people"]))
+        results, errors = [], []
+        for upload in files:
+            payload = await upload.read()
+            name = upload.filename or "upload.xlsx"
+            if not payload:
+                errors.append("%s: empty file" % name)
+                continue
+            if program == "auto":
+                kind, _conf, why = ingest.sniff_kind(name, payload)
+                detected = " (detected: %s)" % why
             else:
-                result = ingest.ingest(conn, io.BytesIO(payload), program, name, digest)
-                msg = ("%s: %s rows -> %s new, %s updated (%s new pings, %s already known)"
-                       % (name, result["row_count"], result["applicants_new"],
-                          result["applicants_updated"], result["pings_new"],
-                          result["pings_duplicate"]))
-        except (ingest.IngestError, spend.SpendError) as exc:
-            return RedirectResponse("/uploads?err=%s" % str(exc)[:400], status_code=303)
+                kind, detected = program, ""
+            msg, err = _ingest_one(conn, kind, name, payload, spend_program)
+            if err:
+                errors.append("%s: %s" % (name, err))
+            else:
+                results.append(msg + detected)
 
-        return RedirectResponse("/uploads?ok=%s" % msg[:400], status_code=303)
+        parts = []
+        if results:
+            parts.append(" · ".join(results))
+        if errors:
+            parts.append("FAILED — " + " · ".join(errors))
+        joined = " || ".join(parts) or "Nothing uploaded"
+        key = "err" if errors and not results else "ok"
+        return RedirectResponse("/uploads?%s=%s" % (key, joined[:800]),
+                                status_code=303)
     finally:
         conn.close()
+
+
+def _ingest_one(conn, program, name, payload, spend_program):
+    """Ingest one file of a known kind -> (success message, None) | (None, error).
+
+    Returns rather than redirects so the caller can run a whole batch and report
+    per-file outcomes together.
+    """
+    if (program not in SPEND_KINDS and program != "referrals"
+            and program not in programs.PROGRAMS):
+        return None, "unknown export type %r" % program
+
+    import io
+    digest = ingest.sha256_of(payload)
+    try:
+        if program in SPEND_KINDS:
+            platform = SPEND_KINDS[program]
+            prog_key = (spend_program if spend_program in programs.PROGRAMS
+                        else "ft")
+            rows, meta = spend.parse(io.BytesIO(payload), platform, name)
+            result = spend.store(conn, prog_key, rows, meta, digest)
+            msg = ("%s: $%s across %s rows, %s month(s) -> %s (%s replaced)"
+                   % (name, format(result["total_cost"], ",.2f"),
+                      result["row_count"], len(result["months"]),
+                      programs.PROGRAMS[prog_key].label, result["replaced"]))
+            if result["warnings"]:
+                msg += " · " + " ".join(result["warnings"])
+        elif program == "referrals":
+            result = ingest.ingest_referrals(
+                conn, io.BytesIO(payload), name, digest)
+            msg = ("%s: %s page views -> %s new, %s already known, across %s people"
+                   % (name, result["row_count"], result["pings_new"],
+                      result["pings_duplicate"], result["people"]))
+        else:
+            result = ingest.ingest(conn, io.BytesIO(payload), program, name, digest)
+            msg = ("%s: %s rows -> %s new, %s updated (%s new pings, %s already known)"
+                   % (name, result["row_count"], result["applicants_new"],
+                      result["applicants_updated"], result["pings_new"],
+                      result["pings_duplicate"]))
+    except (ingest.IngestError, spend.SpendError) as exc:
+        return None, str(exc)[:400]
+    return msg, None
 
 
 @app.post("/unknown/{unknown_id}/ack")

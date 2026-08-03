@@ -648,3 +648,13 @@ code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11.5px;
    in decides whether the rows are allowed to be added up. */
 .attrbar{margin-bottom:6px}
 .attrbar .hint{flex:1 1 240px;min-width:0}
+
+/* Chosen-file list. The native file input truncates names, which matters here
+   because two Slate exports differ only by their date stamp. */
+.filelist{list-style:none;margin:8px 0 0;padding:0;display:flex;
+  flex-direction:column;gap:4px}
+.filelist li{display:flex;gap:10px;align-items:baseline;font-size:12.5px;
+  color:var(--ink-2);background:var(--surface-2);border:1px solid var(--ring-2);
+  border-radius:var(--r-sm);padding:5px 9px;word-break:break-all}
+.filelist .fsize{margin-left:auto;flex:0 0 auto;color:var(--ink-3);
+  font-variant-numeric:tabular-nums}

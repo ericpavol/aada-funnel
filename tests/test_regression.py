@@ -357,7 +357,7 @@ def test_shifted_columns_are_rejected_not_silently_misread():
     conn = db.connect(":memory:")
     with pytest.raises(ingest.IngestError) as err:
         ingest.ingest(conn, buf, "ft", "shifted.xlsx", "")
-    assert "not where" in str(err.value)
+    assert "match none of the" in str(err.value)
     assert conn.execute("SELECT COUNT(*) FROM applicants").fetchone()[0] == 0
     conn.close()
 
@@ -1349,3 +1349,87 @@ def test_cost_payload_ships_both_lenses_for_every_stage(ft_db):
         for k, v in payload[attr].items():
             assert v["rows_sum"] == (attr == "first")
             assert v["stage_label"] == prog.stage_labels[k]
+
+
+def test_new_slate_layout_with_referral_info_column(tmp_path):
+    """2026-08-03: Slate inserted "Referral Info" at index 19, pushing Program
+    Emphasis to 20. Both arrangements must ingest, and emphasis must be read
+    from the right column in each -- reading index 19 on the new file would
+    silently fill emphasis with referrer URLs."""
+    import io
+    import openpyxl as _ox
+    prog = programs.get("ft")
+
+    src = _ox.load_workbook(FT_FILE, read_only=True, data_only=True)
+    rows = [list(r) for i, r in
+            enumerate(src["Export"].iter_rows(values_only=True)) if i <= 60]
+    src.close()
+
+    out = _ox.Workbook()
+    ws = out.active
+    ws.title = "Export"
+    for i, row in enumerate(rows):
+        row = list(row)
+        row.insert(19, "Referral Info" if i == 0
+                   else "2025-09-01 00:00:00 | https://www.aada.edu/")
+        ws.append(row)
+    buf = io.BytesIO()
+    out.save(buf)
+    buf.seek(0)
+
+    conn = db.connect(":memory:")
+    res = ingest.ingest(conn, buf, "ft", "new-layout.xlsx", "")
+    assert res["applicants_new"] > 0
+
+    # Emphasis came from column 20, not the referrer text now sitting at 19.
+    vals = {r["emphasis"] for r in
+            conn.execute("SELECT DISTINCT emphasis FROM applicants")}
+    assert not any("http" in (v or "") for v in vals), \
+        "emphasis was read from the Referral Info column"
+
+    # Both layouts resolve, and to different maps.
+    old_headers = [c for c in rows[0]]
+    new_headers = old_headers[:19] + ["Referral Info"] + old_headers[19:]
+    old_layout, _ = prog.layout_for(old_headers)
+    new_layout, _ = prog.layout_for(new_headers)
+    assert old_layout is not None and new_layout is not None
+    assert old_layout.cols["emphasis"] == 19
+    assert new_layout.cols["emphasis"] == 20
+    conn.close()
+
+
+def test_upload_kind_is_detected_from_headers_not_filenames():
+    """Auto-detect reads column headers, so a badly-named file still routes
+    correctly. A filename-only guess is the fallback, never the first answer."""
+    import io
+    import openpyxl as _ox
+
+    def book(headers):
+        out = _ox.Workbook()
+        ws = out.active
+        ws.title = "Export"
+        ws.append(headers)
+        ws.append(["x"] * len(headers))
+        buf = io.BytesIO()
+        out.save(buf)
+        return buf.getvalue()
+
+    ft = book(["Global ID", "Full-Time App Term", "Started FT App Date"])
+    kind, conf, _why = ingest.sniff_kind("totally-misleading-name.xlsx", ft)
+    assert (kind, conf) == (ingest.KIND_FT, "sure")
+
+    summer = book(["Global ID", "Term", "App Date", "Application Status"])
+    kind, conf, _why = ingest.sniff_kind("also-wrong.xlsx", summer)
+    assert (kind, conf) == (ingest.KIND_SUMMER, "sure")
+
+    meta = book(["Campaign name", "Ad set name", "Amount spent (USD)"])
+    kind, conf, _why = ingest.sniff_kind("q3.xlsx", meta)
+    assert (kind, conf) == (ingest.KIND_META, "sure")
+
+    google = b"Media Spend\n\"Sept 1 - Jul 31\"\nCampaign type,Campaign,Cost\n"
+    kind, conf, _why = ingest.sniff_kind("export.csv", google)
+    assert (kind, conf) == (ingest.KIND_GOOGLE, "sure")
+
+    # Unreadable file -> falls back to the name rather than raising.
+    kind, conf, _why = ingest.sniff_kind("Ping Data - Summer.xlsx", b"not a workbook")
+    assert (kind, conf) == (ingest.KIND_SUMMER, "guess")

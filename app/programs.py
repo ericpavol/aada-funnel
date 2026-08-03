@@ -53,16 +53,49 @@ def _ft_enrolled(row, idx):
     return _s(row[9]).lower() == "enrolled"
 
 
+class Layout:
+    """One known column arrangement of a Slate export.
+
+    Slate's layout changes over time -- on 2026-08-03 a "Referral Info" column
+    appeared at index 19, pushing Program Emphasis to 20. Rather than bumping
+    indices and breaking every older file (including the ones the tests pin),
+    each known arrangement is kept as its own Layout and the right one is picked
+    per upload by matching its anchors.
+
+    Newest first in Program.layouts, so a file matching several (columns only
+    appended) resolves to the most recent.
+    """
+
+    def __init__(self, name, cols, utm_idx, anchors):
+        self.name = name
+        self.cols = cols                # logical name -> column index
+        self.utm_idx = utm_idx          # (source, medium, campaign, content)
+        self.anchors = anchors          # index -> expected header substring
+
+    @property
+    def min_cols(self):
+        return max(max(self.cols.values()), max(self.utm_idx)) + 1
+
+    def matches(self, headers):
+        """-> (ok, [(idx, expected, found), ...]) for the anchors that failed."""
+        bad = []
+        for idx, expect in sorted(self.anchors.items()):
+            found = "" if idx >= len(headers) else _s(headers[idx]).lower()
+            if expect not in found:
+                bad.append((idx, expect,
+                            _s(headers[idx]) if idx < len(headers) else "(missing)"))
+        return (not bad), bad
+
+
 class Program:
-    def __init__(self, key, label, utm_idx, stage_keys, stage_labels, stage_fn,
-                 cols, date_fields, extra_stages=None, channel_stage=None):
+    def __init__(self, key, label, layouts, stage_keys, stage_labels, stage_fn,
+                 date_fields, extra_stages=None, channel_stage=None):
         self.key = key
         self.label = label
-        self.utm_idx = utm_idx          # (source, medium, campaign, content)
+        self.layouts = layouts          # newest arrangement first
         self.stage_keys = stage_keys    # ordered funnel stages
         self.stage_labels = stage_labels
         self.stage_fn = stage_fn        # raw row -> {stage: bool}
-        self.cols = cols                # logical name -> column index
         self.date_fields = date_fields  # filterable date columns: name -> label
         # Stages derived HERE rather than in analysis_engine.py, which is a
         # byte-identical vendored copy of the handoff reference and must not be
@@ -80,16 +113,78 @@ class Program:
             st[key] = fn(row, enrolled_idx)
         return st
 
+    # The newest layout is the default for callers that aren't parsing a file
+    # (seed scripts, tests, anything reading a column index off the program).
+    @property
+    def cols(self):
+        return self.layouts[0].cols
+
+    @property
+    def utm_idx(self):
+        return self.layouts[0].utm_idx
+
     @property
     def min_cols(self):
-        """Lowest column count a file must have to be parseable."""
-        return max(max(self.cols.values()), max(self.utm_idx)) + 1
+        """Lowest column count any known layout can be parsed from."""
+        return min(l.min_cols for l in self.layouts)
 
+    def layout_for(self, headers):
+        """Pick the layout this file is in -> (layout, None), or (None, report).
+
+        `report` describes the failure against the NEWEST layout, since that is
+        the one a genuinely-new Slate arrangement would be closest to.
+        """
+        for layout in self.layouts:
+            ok, _bad = layout.matches(headers)
+            if ok:
+                return layout, None
+        _ok, bad = self.layouts[0].matches(headers)
+        return None, bad
+
+
+# Full-Time, as exported from 2026-08-03 on: "Referral Info" inserted at 19.
+FT_2026_08 = Layout(
+    name="2026-08 (with Referral Info)",
+    utm_idx=(15, 16, 17, 18),
+    cols={
+        "global_id": 0, "term": 1,
+        "started_date": 2, "submitted_date": 3, "completed_date": 4,
+        "aud_requested": 5, "aud_pending": 6, "aud_complete": 7, "admitted": 8,
+        "decision": 9,
+        "country": 10, "region": 11, "city": 12, "postal": 13, "age": 14,
+        "referral_info": 19, "emphasis": 20,
+    },
+    anchors={
+        0: "global id", 1: "term", 2: "started", 8: "admitted",
+        15: "utm source", 16: "utm medium", 17: "utm campaign", 18: "utm content",
+        19: "referral", 20: "emphasis",
+    },
+)
+
+# The layout every file before 2026-08-03 uses, including the handoff samples
+# the tests pin. Kept so older exports still ingest.
+FT_2026_07 = Layout(
+    name="2026-07 (pre Referral Info)",
+    utm_idx=(15, 16, 17, 18),
+    cols={
+        "global_id": 0, "term": 1,
+        "started_date": 2, "submitted_date": 3, "completed_date": 4,
+        "aud_requested": 5, "aud_pending": 6, "aud_complete": 7, "admitted": 8,
+        "decision": 9,
+        "country": 10, "region": 11, "city": 12, "postal": 13, "age": 14,
+        "emphasis": 19,
+    },
+    anchors={
+        0: "global id", 1: "term", 2: "started", 8: "admitted",
+        15: "utm source", 16: "utm medium", 17: "utm campaign", 18: "utm content",
+        19: "emphasis",
+    },
+)
 
 FT = Program(
     key="ft",
     label="Full-Time (2 Year)",
-    utm_idx=(15, 16, 17, 18),
+    layouts=[FT_2026_08, FT_2026_07],
     stage_keys=["started", "submitted", "aud_req", "aud_comp", "admitted",
                 "enrolled"],
     stage_labels={
@@ -103,14 +198,6 @@ FT = Program(
     stage_fn=ft_stages,
     extra_stages={"enrolled": _ft_enrolled},
     channel_stage="admitted",
-    cols={
-        "global_id": 0, "term": 1,
-        "started_date": 2, "submitted_date": 3, "completed_date": 4,
-        "aud_requested": 5, "aud_pending": 6, "aud_complete": 7, "admitted": 8,
-        "decision": 9,
-        "country": 10, "region": 11, "city": 12, "postal": 13, "age": 14,
-        "emphasis": 19,
-    },
     date_fields={
         "started_date": "App Start Date",
         "submitted_date": "App Submitted Date",
@@ -118,10 +205,26 @@ FT = Program(
     },
 )
 
+SUMMER_2026_07 = Layout(
+    name="2026-07",
+    utm_idx=(10, 12, 13, 14),
+    cols={
+        "global_id": 0, "term": 1, "started_date": 2, "age": 3,
+        "app_status": 4, "decision": 5,
+        "country": 6, "region": 7, "city": 8, "postal": 9,
+        "emphasis": 11,
+    },
+    anchors={
+        0: "global id", 1: "term", 2: "app date", 4: "status",
+        10: "utm source", 11: "programs", 12: "utm medium", 13: "utm campaign",
+        14: "utm content",
+    },
+)
+
 SUMMER = Program(
     key="summer",
     label="Summer",
-    utm_idx=(10, 12, 13, 14),
+    layouts=[SUMMER_2026_07],
     stage_keys=["started", "submitted", "accepted"],
     stage_labels={
         "started": "Started",
@@ -129,12 +232,6 @@ SUMMER = Program(
         "accepted": "Accepted",
     },
     stage_fn=summer_stages,
-    cols={
-        "global_id": 0, "term": 1, "started_date": 2, "age": 3,
-        "app_status": 4, "decision": 5,
-        "country": 6, "region": 7, "city": 8, "postal": 9,
-        "emphasis": 11,
-    },
     date_fields={
         "started_date": "App Date",
     },
@@ -150,7 +247,10 @@ EXPECTED_HEADER_HINTS = {
     "summer": ["global id", "term", "utm source", "utm medium", "utm campaign"],
 }
 
-# Anchor columns checked BY POSITION on every upload.
+# Anchor columns now live on each Layout above; this dict is kept only so the
+# newest arrangement is greppable from one place.
+#
+# Anchor columns are checked BY POSITION on every upload.
 #
 # Everything is parsed by column index, so a column INSERTED IN THE MIDDLE of a
 # Slate export shifts every field after it and silently corrupts the numbers —
@@ -160,18 +260,8 @@ EXPECTED_HEADER_HINTS = {
 #
 # Matching is a normalised substring, so the "Audtion" typos, minor renames, and
 # columns APPENDED at the end all still pass — only a positional shift fails.
-HEADER_ANCHORS = {
-    "ft": {
-        0: "global id", 1: "term", 2: "started", 8: "admitted",
-        15: "utm source", 16: "utm medium", 17: "utm campaign", 18: "utm content",
-        19: "emphasis",
-    },
-    "summer": {
-        0: "global id", 1: "term", 2: "app date", 4: "status",
-        10: "utm source", 11: "programs", 12: "utm medium", 13: "utm campaign",
-        14: "utm content",
-    },
-}
+HEADER_ANCHORS = {k: p.layouts[0].anchors for k, p in
+                  (("ft", FT), ("summer", SUMMER))}
 
 
 def get(program_key):

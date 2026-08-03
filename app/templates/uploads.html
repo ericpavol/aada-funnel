@@ -34,17 +34,27 @@
       <div class="field">
         <span class="eyebrow">Export type</span>
         <select name="program" aria-label="Export type">
+          <option value="auto" selected>Detect automatically</option>
           {% for k, p in programs.items() %}
-            <option value="{{ k }}" {{ 'selected' if k == program.key else '' }}>Ping Data — {{ p.label }}</option>
+            <option value="{{ k }}">Ping Data — {{ p.label }}</option>
           {% endfor %}
           <option value="referrals">Referrer ping log (native, one row per page view)</option>
           <option value="spend_google">Media spend — Google Ads (.csv)</option>
           <option value="spend_meta">Media spend — Meta Ads (.xlsx)</option>
         </select>
+        <span class="hint">Detection reads each file's column headers, not its
+          name. Pick a type to force it for every file in the batch.</span>
       </div>
       <div class="field">
-        <span class="eyebrow">File</span>
-        <input type="file" name="file" accept=".xlsx,.csv" required aria-label="Export file">
+        <span class="eyebrow">Files</span>
+        {# `multiple`: a monthly refresh is usually several exports at once, and
+           the old one-at-a-time form meant re-picking the type five times. #}
+        <input type="file" name="files" accept=".xlsx,.csv" required multiple
+               id="fileInput" aria-label="Export files">
+        {# The native control truncates long names to "Ping Data - 2 Y...xlsx",
+           which is unreadable when the only difference between two exports is
+           the date stamp. List them in full instead. #}
+        <ul class="filelist" id="fileList" hidden></ul>
       </div>
       <div class="field">
         <span class="eyebrow">Spend belongs to</span>
@@ -53,11 +63,36 @@
             <option value="{{ k }}" {{ 'selected' if k == program.key else '' }}>{{ p.label }}</option>
           {% endfor %}
         </select>
-        <span class="hint">Only used for the two media-spend types. Google and Meta
+        <span class="hint">Only used for media-spend files. Google and Meta
           campaigns often serve both programs — upload a file filtered to one.</span>
       </div>
     </div>
     <div class="fbtns"><button class="btn" type="submit">Upload &amp; merge</button></div>
+
+  <script>
+  (function () {
+    var input = document.getElementById("fileInput");
+    var list = document.getElementById("fileList");
+    if (!input || !list) return;
+    input.addEventListener("change", function () {
+      var files = Array.prototype.slice.call(input.files || []);
+      list.innerHTML = "";
+      list.hidden = !files.length;
+      files.forEach(function (f) {
+        var li = document.createElement("li");
+        var kb = f.size > 1048576
+          ? (f.size / 1048576).toFixed(1) + " MB"
+          : Math.max(1, Math.round(f.size / 1024)) + " KB";
+        li.textContent = f.name;
+        var size = document.createElement("span");
+        size.className = "fsize";
+        size.textContent = kb;
+        li.appendChild(size);
+        list.appendChild(li);
+      });
+    });
+  })();
+  </script>
   </form>
 
   <div class="note accent"><b>Uploads accumulate.</b> Records are keyed on Global ID +

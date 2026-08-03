@@ -6,9 +6,12 @@ logic sees exactly what it expects. Normalisation for storage happens after.
 """
 import datetime as _dt
 import hashlib
+import io
+import zipfile
 from collections import defaultdict
 
 import openpyxl
+from openpyxl.utils.exceptions import InvalidFileException
 
 from . import programs
 from .analysis_engine import build_path, classify
@@ -83,29 +86,35 @@ def read_rows(path_or_stream):
 
 
 def validate(program, headers, data):
-    """Loose structural check. Returns a list of human-readable warnings."""
+    """Loose structural check. Returns (layout, warnings).
+
+    Slate's arrangement changes over time, so the file is matched against every
+    known Layout rather than one fixed map -- see programs.Layout. A file that
+    matches none of them is refused outright: importing anyway would silently
+    mis-read every field after the shift.
+    """
     warnings = []
     if len(headers) < program.min_cols:
         raise IngestError(
             "%s exports need at least %d columns; this file has %d. "
             "Wrong program selected?" % (program.label, program.min_cols, len(headers))
         )
-    # Positional check first: a column inserted mid-export shifts every field
-    # after it and would corrupt the numbers silently. Fail loudly instead.
-    shifted = []
-    for idx, expect in sorted(programs.HEADER_ANCHORS[program.key].items()):
-        found = _s(headers[idx]).lower() if idx < len(headers) else ""
-        if expect not in found:
-            shifted.append((idx, expect, _s(headers[idx]) if idx < len(headers) else "(missing)"))
-    if shifted:
+
+    layout, shifted = program.layout_for(headers)
+    if layout is None:
         detail = "; ".join(
             "column %d should contain %r but is %r" % (i, e, f) for i, e, f in shifted)
         raise IngestError(
-            "This file's columns are not where %s expects them: %s. Nothing was "
-            "imported. If Slate changed the export layout (a new column, or a "
-            "reordering), the column map in app/programs.py needs updating first — "
-            "importing anyway would silently mis-read every field after the shift."
-            % (program.label, detail)
+            "This file's columns match none of the %d known %s layouts. Closest is "
+            "%r: %s. Nothing was imported. If Slate changed the export again, add "
+            "the new arrangement as a Layout in app/programs.py — importing anyway "
+            "would silently mis-read every field after the shift."
+            % (len(program.layouts), program.label, program.layouts[0].name, detail)
+        )
+    if layout is not program.layouts[0]:
+        warnings.append(
+            "Read using the older %r column layout. That is expected for an export "
+            "pulled before Slate's latest change." % layout.name
         )
 
     norm = " | ".join(_s(h).lower() for h in headers)
@@ -115,18 +124,18 @@ def validate(program, headers, data):
             "Header check: expected to see %s in the header row. Columns are read "
             "by position, so this is a heads-up, not a failure." % ", ".join(repr(m) for m in missing)
         )
-    extra = len(headers) - program.min_cols
+    extra = len(headers) - layout.min_cols
     if extra > 0:
         warnings.append(
-            "%d column(s) beyond the %d this program maps were ignored. Appended "
+            "%d column(s) beyond the %d this layout maps were ignored. Appended "
             "columns are safe; if one of them is meaningful (a new program type, "
             "say) it needs adding to app/programs.py to be used."
-            % (extra, program.min_cols)
+            % (extra, layout.min_cols)
         )
-    short = sum(1 for r in data if len(r) < program.min_cols)
+    short = sum(1 for r in data if len(r) < layout.min_cols)
     if short:
         warnings.append("%d row(s) are shorter than expected and were padded." % short)
-    return warnings
+    return layout, warnings
 
 
 def _pad(row, n):
@@ -164,7 +173,7 @@ def ingest(conn, path_or_stream, program_key, filename, sha256=None):
     """Merge one export into the DB. Returns a summary dict."""
     program = programs.get(program_key)
     headers, data = read_rows(path_or_stream)
-    warnings = validate(program, headers, data)
+    layout, warnings = validate(program, headers, data)
     # A dedicated enrolled column is expected in a future export; until then the
     # stage is read off Most Recent Decision. Detected per file, so one export
     # with the column and one without both ingest correctly.
@@ -173,7 +182,7 @@ def ingest(conn, path_or_stream, program_key, filename, sha256=None):
         warnings.append(
             "Reading Enrolled from column %d (%r) instead of Most Recent Decision."
             % (enrolled_idx + 1, programs._s(headers[enrolled_idx])))
-    pad_to = max(program.min_cols, (enrolled_idx or -1) + 1)
+    pad_to = max(layout.min_cols, (enrolled_idx or -1) + 1)
 
     if sha256 is None:
         sha256 = ""
@@ -200,7 +209,7 @@ def ingest(conn, path_or_stream, program_key, filename, sha256=None):
     )
     upload_id = cur.lastrowid
 
-    cols = program.cols
+    cols = layout.cols
     stage_map = {
         "started": "st_started", "submitted": "st_submitted",
         "aud_req": "st_aud_req", "aud_comp": "st_aud_comp",
@@ -322,7 +331,7 @@ def ingest(conn, path_or_stream, program_key, filename, sha256=None):
             )
             n_upd += 1
 
-        for p in extract_pings(row, program.utm_idx):
+        for p in extract_pings(row, layout.utm_idx):
             cur.execute(
                 "INSERT OR IGNORE INTO pings (applicant_id, ts, seq, source, medium,"
                 " campaign, content, channel, sub_source) VALUES (?,?,?,?,?,?,?,?,?)",
@@ -540,3 +549,94 @@ def ingest_referrals(conn, path_or_stream, filename, sha256=None):
     return {"upload_id": upload_id, "filename": filename, "row_count": len(data),
             "pings_new": new, "pings_duplicate": dup, "people": len(people),
             "warnings": warnings, "duplicate_file": dup_file}
+
+# --------------------------------------------------------------------------
+# what kind of file is this?
+# --------------------------------------------------------------------------
+# Upload kinds, matching the values the /uploads form posts.
+KIND_FT = "ft"
+KIND_SUMMER = "summer"
+KIND_REFERRALS = "referrals"
+KIND_GOOGLE = "spend_google"
+KIND_META = "spend_meta"
+
+
+def sniff_kind(filename, payload):
+    """Guess what an uploaded file is -> (kind, confidence, why).
+
+    Headers first, filename only as a tie-breaker: a file's contents are what it
+    actually IS, whereas its name is whatever someone typed. Every guess is
+    shown to the user before anything is imported, and is overridable -- this
+    saves picking from a dropdown five times, it does not get to be wrong
+    silently.
+
+    confidence: "sure" (header match) or "guess" (filename only).
+    """
+    name = (filename or "").lower()
+
+    if name.endswith(".csv"):
+        head = ""
+        try:
+            head = payload[:4000].decode("utf-8-sig", "replace").lower()
+        except Exception:
+            pass
+        if "campaign" in head and "cost" in head:
+            return KIND_GOOGLE, "sure", "CSV with Campaign and Cost columns"
+        return KIND_GOOGLE, "guess", "CSV -- Google Ads is the only CSV type"
+
+    headers = []
+    try:
+        import warnings as _w
+        from openpyxl import load_workbook
+        with _w.catch_warnings():
+            _w.simplefilter("ignore")
+            wb = load_workbook(io.BytesIO(payload), read_only=True, data_only=True)
+            ws = wb[wb.sheetnames[0]]
+            for row in ws.iter_rows(min_row=1, max_row=1, values_only=True):
+                headers = [_s(h).lower() for h in row]
+                break
+            sheets = [n.lower() for n in wb.sheetnames]
+            wb.close()
+    except (OSError, ValueError, KeyError, TypeError,
+            zipfile.BadZipFile, InvalidFileException):
+        # Genuinely unreadable as a workbook -- fall back to the filename.
+        # Deliberately NOT a bare `except Exception`: a missing import once hid
+        # here and silently downgraded every xlsx to a filename guess.
+        return _sniff_by_name(name)
+
+    joined = " | ".join(headers)
+
+    if "amount spent" in joined or "ad set name" in joined:
+        return KIND_META, "sure", "Meta export (Amount spent column)"
+    if "campaign" in joined and "cost" in joined:
+        return KIND_GOOGLE, "sure", "Google Ads export (Campaign + Cost)"
+
+    # Slate exports all carry Global ID; the program is the question.
+    if "global id" in joined:
+        if "full-time app term" in joined or "started ft app date" in joined:
+            return KIND_FT, "sure", "Slate export with Full-Time columns"
+        if "app date" in joined and "application status" in joined:
+            return KIND_SUMMER, "sure", "Slate export with Summer columns"
+        if "referrer" in joined or "url" in joined:
+            return KIND_REFERRALS, "sure", "Slate referrer ping log"
+        guess, _c, _w2 = _sniff_by_name(name)
+        return guess, "guess", "Slate export; program taken from the filename"
+
+    if any("referral" in x or "referrer" in x for x in sheets + headers):
+        return KIND_REFERRALS, "sure", "referrer ping log"
+
+    return _sniff_by_name(name)
+
+
+def _sniff_by_name(name):
+    if "summer" in name:
+        return KIND_SUMMER, "guess", "filename says Summer"
+    if "referral" in name or "referrer" in name:
+        return KIND_REFERRALS, "guess", "filename says referral"
+    if "meta" in name:
+        return KIND_META, "guess", "filename says Meta"
+    if "google" in name:
+        return KIND_GOOGLE, "guess", "filename says Google"
+    if "2 year" in name or "full" in name or "ping data" in name:
+        return KIND_FT, "guess", "filename looks like a Full-Time ping export"
+    return KIND_FT, "guess", "defaulted to Full-Time"
