@@ -1532,3 +1532,46 @@ def test_shrinking_term_warns_but_never_deletes(ft_db):
         (biggest_term,)).fetchone()[0]
     assert after_term == term_before[biggest_term], \
         "the shrunk term's existing rows must survive untouched"
+
+
+def test_winter_and_spring_are_one_intake():
+    """AADA is renaming the January intake from "Winter" to "Spring", and
+    Slate's Aug 2026 export carries both spellings at once. Term is part of the
+    applicant dedup key, so leaving them distinct would split one intake into
+    two filter options AND import the same person twice."""
+    assert programs.canonical_term("Winter 2027 (January 2027)") == \
+        programs.canonical_term("January 2027 (Spring)") == "January 2027 (Spring)"
+    assert programs.canonical_term("Winter 2026 (January 2026)") == "January 2026 (Spring)"
+
+    # The January year wins, not the label year -- they can disagree.
+    assert programs.canonical_term("Winter 2025 (January 2025)") == "January 2025 (Spring)"
+
+    # Everything else is left completely alone.
+    for untouched in ("Fall 2026", "Summer 2026", "Fall 2025 (August 2025)", ""):
+        assert programs.canonical_term(untouched) == untouched
+    assert programs.canonical_term(None) == ""
+
+
+def test_stored_winter_terms_are_migrated_on_connect(tmp_path):
+    """A database written before the rename still holds "Winter ..." rows.
+    connect() rewrites them, so a later upload of the same people under the new
+    label updates those rows instead of inserting duplicates."""
+    path = str(tmp_path / "old-terms.db")
+    conn = db.connect(path)
+    ingest.ingest(conn, FT_FILE, "ft", "seed.xlsx", "")
+    # Force a row back to the pre-rename spelling, as an older DB would have.
+    conn.execute("UPDATE applicants SET term='Winter 2026 (January 2026)' "
+                 "WHERE program='ft' AND term='January 2026 (Spring)'")
+    conn.commit()
+    stale = conn.execute(
+        "SELECT COUNT(*) FROM applicants WHERE term LIKE 'Winter%'").fetchone()[0]
+    assert stale > 0
+    conn.close()
+
+    conn = db.connect(path)          # migration runs here
+    assert conn.execute(
+        "SELECT COUNT(*) FROM applicants WHERE term LIKE 'Winter%'").fetchone()[0] == 0
+    assert conn.execute(
+        "SELECT COUNT(*) FROM applicants WHERE term='January 2026 (Spring)'"
+    ).fetchone()[0] == stale
+    conn.close()

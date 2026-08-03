@@ -3,6 +3,8 @@
 Column indices are 0-based and come from DATA_SCHEMA.md. Full-Time and Summer
 are analysed SEPARATELY and never merged (CLAUDE.md golden rule).
 """
+import re
+
 from .analysis_engine import ft_stages, summer_stages
 
 
@@ -51,6 +53,37 @@ def _ft_enrolled(row, idx):
     if idx is not None and idx < len(row):
         return _flag(row[idx])
     return _s(row[9]).lower() == "enrolled"
+
+
+# AADA is renaming the January intake from "Winter" to "Spring". Slate's
+# 2026-08-03 export already uses the new label for 2027 ("January 2027 (Spring)")
+# while still carrying the old one for 2026 ("Winter 2026 (January 2026)"), so
+# both spellings are live in the same file. Left alone they would split one
+# intake into two filter options and two dedup keys.
+#
+# Canonical form is the NEW naming, since that is where AADA is heading.
+_WINTER_RE = re.compile(r"^winter\s+(\d{4})\s*\(january\s+(\d{4})\)$", re.I)
+_SPRING_RE = re.compile(r"^january\s+(\d{4})\s*\(spring\)$", re.I)
+
+
+def canonical_term(term):
+    """Normalise a term label so one intake has exactly one name.
+
+    "Winter 2027 (January 2027)" and "January 2027 (Spring)" are the same
+    intake under two labels; both become "January 2027 (Spring)". Anything
+    that matches neither pattern is returned untouched -- this only collapses
+    the rename, it does not try to tidy terms generally.
+    """
+    t = _s(term)
+    if not t:
+        return t
+    m = _WINTER_RE.match(t)
+    if m:
+        # The January year is authoritative: "Winter 2026 (January 2026)".
+        return "January %s (Spring)" % m.group(2)
+    if _SPRING_RE.match(t):
+        return "January %s (Spring)" % _SPRING_RE.match(t).group(1)
+    return t
 
 
 class Layout:

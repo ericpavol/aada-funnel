@@ -22,9 +22,16 @@
          href="{{ request.url.path }}?{{ qs_set(request, 'dates', 'all') }}"
          title="No date filter">All time</a>
     </div>
-    {% if filters.date_field and fy_active is none and not fy_all_time %}
-      <span class="hint">Custom: {{ filters.date_from or '…' }} → {{ filters.date_to or '…' }}</span>
-    {% endif %}
+    {# Spell out the range the active choice covers. "FY 2025/26" alone means
+       nothing unless you already remember AADA's fiscal year starts 1 Sept. #}
+    <span class="hint">
+      {%- if fy_all_time -%}
+        No date filter — every application ever loaded
+      {%- elif filters.date_field -%}
+        {{ filters.date_from or '…' }} → {{ filters.date_to or '…' }}
+        {%- if fy_active is not none %} · fiscal year runs 1 Sept → 31 Aug{% endif %}
+      {%- endif -%}
+    </span>
   </div>
 
   <div class="fbar-row">

@@ -67,10 +67,34 @@
           campaigns often serve both programs — upload a file filtered to one.</span>
       </div>
     </div>
-    <div class="fbtns"><button class="btn" type="submit">Upload &amp; merge</button></div>
+    <div class="fbtns">
+    <button class="btn" type="submit" id="uploadBtn">Upload &amp; merge</button>
+    <span class="uploading" id="uploadBusy" hidden>
+      <span class="spinner" aria-hidden="true"></span>
+      Importing… large exports take a minute. Don't close this tab.
+    </span>
+  </div>
 
   <script>
   (function () {
+    // A big Slate export takes ~30-60s to parse server-side, during which the
+    // form looks completely inert -- the button was easy to click three times.
+    // Disabling it is the actual fix; the spinner explains why.
+    var form = document.querySelector('form[action="/uploads"]');
+    var btn = document.getElementById("uploadBtn");
+    var busy = document.getElementById("uploadBusy");
+    if (form && btn && busy) {
+      form.addEventListener("submit", function () {
+        // Let the submit proceed, then disable on the next tick: a disabled
+        // button is not submitted, so disabling synchronously would cancel it.
+        setTimeout(function () {
+          btn.disabled = true;
+          btn.textContent = "Importing…";
+          busy.hidden = false;
+        }, 0);
+      });
+    }
+
     var input = document.getElementById("fileInput");
     var list = document.getElementById("fileList");
     if (!input || !list) return;

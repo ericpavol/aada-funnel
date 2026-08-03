@@ -285,6 +285,10 @@ def _ctx(request, conn, program, flt, **extra):
     ctx = {
         "request": request,
         "program": program,
+        # Canonical taxonomy position -> palette slot. Built here so every
+        # template and chart reads the same mapping.
+        "channel_colours": {ch: i % 8 for i, (ch, _subs)
+                            in enumerate(taxonomy.TAXONOMY)},
         "fy_years": fy_years,
         "fy_active": (filters.fiscal_year_of(flt.date_from)
                       if flt.date_field == filters.DEFAULT_DATE_FIELD

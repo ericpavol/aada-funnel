@@ -194,7 +194,7 @@ def _check_term_shrinkage(conn, program_key, layout, data, pad_to):
     incoming = defaultdict(int)
     for raw in data:
         row = _pad(raw, pad_to)
-        incoming[_s(row[term_idx])] += 1
+        incoming[programs.canonical_term(row[term_idx])] += 1
 
     shrunk = sorted(
         ((term, before, incoming.get(term, 0)) for term, before in have.items()
@@ -288,7 +288,9 @@ def ingest(conn, path_or_stream, program_key, filename, sha256=None):
             stage_vals[stage_map[k]] = 1 if v else 0
 
         fields = {
-            "term": _s(row[cols["term"]]),
+            # Canonical so the Winter->Spring rename doesn't split one intake
+            # across two labels (and two dedup keys). See programs.canonical_term.
+            "term": programs.canonical_term(row[cols["term"]]),
             "country": _s(row[cols.get("country", 0)]) if "country" in cols else "",
             "region": _s(row[cols["region"]]) if "region" in cols else "",
             "city": _s(row[cols["city"]]) if "city" in cols else "",

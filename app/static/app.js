@@ -432,13 +432,26 @@
       }
       wireExpandClicks(el, canvasId);
 
-      // Sub-source fill: blended toward the neutral ink, NOT toward the surface.
-      // Mixing toward the surface only lightens the accent, leaving the same
-      // vivid hue and reading as "another parent". Mixing toward grey drops the
-      // chroma, so a child bar is obviously subordinate while staying in the
-      // accent's colour family — and it keeps mid-tone luminance, so it stays
-      // visible on the light surface AND the dark one.
-      var subFill = mixToward(t.accent, t.ink3, .5);
+      // One hue per CHANNEL rather than the accent for everything: with eight
+      // channels stacked, a single green made the ranking the only thing you
+      // could read. The slot comes from taxonomy order (window.AADA_CHANNEL_COLOURS),
+      // so a channel wears the same colour here, on the other bar chart, and on
+      // the cost card — colour identifies the entity, never its rank.
+      //
+      // Sub-source fill: its OWN parent's hue blended toward the neutral ink,
+      // not toward the surface. Mixing toward the surface only lightens it and
+      // still reads as "another parent"; mixing toward grey drops the chroma so
+      // a child is obviously subordinate while staying in its parent's family.
+      function hueFor(f) {
+        var map = window.AADA_CHANNEL_COLOURS || {};
+        // `parent` on a sub row is the parent ROW object, not its name.
+        var parent = f.isSub
+          ? ((f.parent && f.parent.channel) || "")
+          : f.label;
+        var slot = map[parent];
+        if (slot == null) return t.accent;
+        return t.series[slot % 8];
+      }
 
       return new Chart(el, {
         type: "bar",
@@ -452,10 +465,12 @@
             label: opts.seriesLabel,
             data: flat.map(function (f) { return f.value; }),
             backgroundColor: flat.map(function (f) {
-              return f.muted ? t.grid : (f.isSub ? subFill : t.accent);
+              if (f.muted) return t.grid;
+              var hue = hueFor(f);
+              return f.isSub ? mixToward(hue, t.ink3, .45) : hue;
             }),
             borderColor: flat.map(function (f) {
-              return f.muted ? t.grid : t.accentStrong;
+              return f.muted ? t.grid : mixToward(hueFor(f), t.ink, .3);
             }),
             borderWidth: 1,
             borderRadius: 4,

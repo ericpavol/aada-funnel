@@ -47,7 +47,7 @@ Summer: 4,483 → 954 → 387.
 FY 2025/26 paid media: **$288,357** (Google $140,222 · Meta $148,135).
 Blended first-touch cost per started app ≈ **$51**.
 
-**65 tests** pass against the real sample files. If a change moves any canonical
+**67 tests** pass against the real sample files. If a change moves any canonical
 number above, that is a regression until proven otherwise.
 
 ---
@@ -106,6 +106,13 @@ Rollback lives in Render's dashboard, not git.
 - **Spend uploads replace, they don't accumulate.** Each upload wipes and
   rewrites the months it covers, because platforms revise figures after the
   fact. Months not in the file are untouched.
+- **Winter and Spring are the same intake.** AADA is renaming the January
+  intake, and Slate's Aug 2026 export carries both spellings at once
+  ("Winter 2026 (January 2026)" and "January 2027 (Spring)").
+  `programs.canonical_term` collapses them to the new naming at ingest, and
+  `db._migrate_terms` rewrites rows stored under the old label — term is part
+  of the applicant dedup key, so two spellings would mean two filter options
+  and duplicate people.
 - **Enrolled is derived here, not by the vendored engine** — read from Most
   Recent Decision until Slate ships a dedicated column, which the code will pick
   up automatically when it appears.
@@ -147,7 +154,10 @@ fewer. `ingest._check_term_shrinkage` enforces this at term granularity: before
 a file is stored, it compares the file's per-term row counts against what the
 database already holds, and warns (does not block — uploads never delete)
 whenever a term comes back smaller. This exists because the 2026-08-03 Slate
-pull silently dropped 1,326 of 1,334 Winter 2026 rows — a narrower report
+pull silently dropped 1,326 of 1,334 Winter 2026 rows. Checked and ruled out
+the Winter->Spring rename as the cause: those 1,335 Global IDs are absent from
+the new file under *any* term name, and the rename visibly applied to 2027
+(which grew 14 -> 44), not 2026. So it is a narrower report
 filter on Slate's side, not data loss, but nothing would have surfaced it
 without this check.
 

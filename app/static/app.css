@@ -658,3 +658,14 @@ code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11.5px;
   border-radius:var(--r-sm);padding:5px 9px;word-break:break-all}
 .filelist .fsize{margin-left:auto;flex:0 0 auto;color:var(--ink-3);
   font-variant-numeric:tabular-nums}
+
+/* Upload busy state. The import is synchronous and can take a minute on a
+   large export; without this the form looks like it ignored the click. */
+.uploading{display:inline-flex;align-items:center;gap:9px;margin-left:14px;
+  font-size:12.5px;color:var(--ink-2)}
+.spinner{width:13px;height:13px;flex:0 0 auto;border-radius:50%;
+  border:2px solid var(--ring);border-top-color:var(--accent-strong);
+  animation:spin .7s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+@media (prefers-reduced-motion:reduce){.spinner{animation-duration:2.4s}}
+.btn[disabled]{opacity:.55;cursor:progress}

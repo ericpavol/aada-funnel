@@ -31,6 +31,10 @@
 <link rel="stylesheet" href="{{ asset('app.css') }}">
 <script src="{{ asset('chart.umd.js') }}"></script>
 <script src="{{ asset('app.js') }}"></script>
+{# Channel -> palette slot, from taxonomy order, shared by every chart on every
+   page. Colour follows the ENTITY, never its rank in the current view, so a
+   channel keeps the same hue across the three bar charts and the tabs. #}
+<script>window.AADA_CHANNEL_COLOURS = {{ channel_colours|tojson }};</script>
 <script src="{{ asset('filters.js') }}" defer></script>
 </head>
 <body>

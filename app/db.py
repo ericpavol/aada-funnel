@@ -219,7 +219,35 @@ def _migrate(conn):
         have = {r["name"] for r in conn.execute("PRAGMA table_info(%s)" % table)}
         if col not in have:
             conn.execute("ALTER TABLE %s ADD COLUMN %s %s" % (table, col, decl))
+    _migrate_terms(conn)
     conn.commit()
+
+
+def _migrate_terms(conn):
+    """Rewrite term labels stored before the Winter -> Spring rename.
+
+    Terms are part of the applicant dedup key, so leaving old rows under
+    "Winter 2026 (January 2026)" while new uploads arrive as
+    "January 2026 (Spring)" would make the same person import twice. Runs on
+    every connect; it is a no-op once there is nothing left to rename.
+    """
+    from . import programs
+    rows = conn.execute(
+        "SELECT DISTINCT term FROM applicants WHERE term <> ''").fetchall()
+    for r in rows:
+        old = r["term"]
+        new = programs.canonical_term(old)
+        if new == old:
+            continue
+        # A row may already exist under the canonical label (same person, both
+        # spellings). Merging those properly means honouring the monotonic
+        # stage rule, so hand them to the existing upsert path rather than
+        # blindly renaming into a UNIQUE collision.
+        try:
+            conn.execute("UPDATE applicants SET term=? WHERE term=?", (new, old))
+        except sqlite3.IntegrityError:
+            conn.execute(
+                "UPDATE OR IGNORE applicants SET term=? WHERE term=?", (new, old))
 
 
 def reset(conn):
