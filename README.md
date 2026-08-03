@@ -116,6 +116,53 @@ First-time setup, if the venv is missing:
 python3 -m venv .venv && ./.venv/bin/pip install fastapi "uvicorn[standard]" openpyxl jinja2 python-multipart pytest httpx
 ```
 
+## Deploying
+
+Hosted on **Render** at <https://aada-funnel.onrender.com>, so a coworker can
+reach it from anywhere. Two things make that safe to do with real applicant data
+on board:
+
+- **A login gate.** `app/auth.py` is HTTP Basic Auth checked against `AADA_USER` /
+  `AADA_PASS`, which live only as Render environment variables — never in this
+  repo, which is public. Auth switches itself **on** the moment either variable is
+  set, and the app **refuses to boot** if only one of them is (a typo'd variable
+  name should be a loud startup failure, not a silently open site). With neither
+  set, local development is unaffected and stays open on `127.0.0.1`.
+- **`/static` is deliberately exempt.** The gate is applied once at the
+  `FastAPI(dependencies=[...])` level, which covers every route but does not reach
+  into `app.mount("/static", ...)` — a separate ASGI app. CSS/JS/fonts carry no
+  applicant data, so they need no login.
+
+### Branch workflow — why `dev` exists
+
+Render auto-deploys **`main`**, and only `main`. So `main` is the live site a
+coworker may be looking at right now, and `dev` is where work happens:
+
+```bash
+git checkout dev        # do work here; pushing has no effect on the live site
+git push                # safe — Render ignores this branch
+
+git checkout main       # when it's ready to ship
+git merge dev
+git push                # THIS is the deploy
+```
+
+If something bad does reach production, don't reach for git: Render's dashboard →
+**Deploys** → pick the last good one → **Rollback**. Seconds, and it needs no
+local machine.
+
+### The database is not in this repo
+
+`data/` and `*.db` are gitignored, and the live database lives on a Render
+persistent disk mounted at `/var/data` (`AADA_DB` points there — see
+`render.yaml`). The hosted instance therefore starts **empty** and needs its own
+one-time upload of the Slate and spend exports via `/uploads`. That is the design,
+not a migration step to automate: real applicant records never transit this
+public repo.
+
+The disk is also why the service can't run on Render's free tier — a web service
+without persistent storage would lose the database on every redeploy.
+
 ## How the analysis logic is handled
 
 `app/analysis_engine.py` is a **byte-identical copy** of
@@ -131,7 +178,7 @@ agree on every channel row against the real sample data.
 
 ## What the tests pin
 
-34 tests, all against the real files in `sample_data/`:
+61 tests, all against the real files in `sample_data/`:
 
 - the documented stage totals (8436 / 1240 / 875 / 460 / 350) and every channel
   figure in the engine's docstring;
