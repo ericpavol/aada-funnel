@@ -169,6 +169,52 @@ def extract_pings(row, utm_idx):
     return out
 
 
+def _check_term_shrinkage(conn, program_key, layout, data, pad_to):
+    """Flag any term where this file has FEWER rows than the database already
+    holds for it.
+
+    Every export is expected to be a superset of the last one -- cumulative,
+    never narrower. A term coming back smaller almost always means the export
+    itself was scoped differently (a term or date filter on Slate's side), not
+    that people vanished; the July -> August pull dropped 1,326 of 1,334 Winter
+    2026 rows exactly this way. It is a warning, not a hard stop: uploads merge
+    and never delete, so accepting the file is always safe, but silently eating
+    a shrunk term is how the wrong Slate report goes unnoticed for months.
+    """
+    term_idx = layout.cols.get("term")
+    if term_idx is None:
+        return []
+
+    have = {r["term"]: r["n"] for r in conn.execute(
+        "SELECT term, COUNT(*) n FROM applicants WHERE program=? GROUP BY term",
+        (program_key,))}
+    if not have:
+        return []          # first upload ever for this program -- nothing to compare
+
+    incoming = defaultdict(int)
+    for raw in data:
+        row = _pad(raw, pad_to)
+        incoming[_s(row[term_idx])] += 1
+
+    shrunk = sorted(
+        ((term, before, incoming.get(term, 0)) for term, before in have.items()
+         if incoming.get(term, 0) < before),
+        key=lambda t: t[1] - t[2], reverse=True)
+    if not shrunk:
+        return []
+
+    lines = ["%r: had %d, this file has %d" % (t or "(blank)", b, n)
+             for t, b, n in shrunk[:6]]
+    if len(shrunk) > 6:
+        lines.append("and %d more term(s)" % (len(shrunk) - 6))
+    return ["This file has FEWER rows than already stored for %d term(s) — "
+            "%s. Nobody was deleted (uploads only ever add or update), but this "
+            "usually means the export itself was scoped narrower than before "
+            "(a term or date filter on Slate's side) rather than that people "
+            "left. Worth checking before trusting counts for those terms."
+            % (len(shrunk), "; ".join(lines))]
+
+
 def ingest(conn, path_or_stream, program_key, filename, sha256=None):
     """Merge one export into the DB. Returns a summary dict."""
     program = programs.get(program_key)
@@ -183,6 +229,7 @@ def ingest(conn, path_or_stream, program_key, filename, sha256=None):
             "Reading Enrolled from column %d (%r) instead of Most Recent Decision."
             % (enrolled_idx + 1, programs._s(headers[enrolled_idx])))
     pad_to = max(layout.min_cols, (enrolled_idx or -1) + 1)
+    warnings.extend(_check_term_shrinkage(conn, program_key, layout, data, pad_to))
 
     if sha256 is None:
         sha256 = ""

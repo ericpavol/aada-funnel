@@ -1481,3 +1481,54 @@ def test_last_touch_partitions_people_like_first_touch(ft_db):
     assert any_["stage_total"] > last["stage_total"]
     assert any_["blended_per_stage"] < first["blended_per_stage"]
     assert any_["blended_per_stage"] < last["blended_per_stage"]
+
+
+def test_shrinking_term_warns_but_never_deletes(ft_db):
+    """Every export is expected to be a superset of the last one. A term coming
+    back with fewer rows than the database already holds must be surfaced loud
+    — this is exactly what happened when Slate's Aug 2026 pull dropped 1,326 of
+    1,334 Winter 2026 rows — but must never delete anything: uploads only add
+    or update."""
+    import io
+    import openpyxl as _ox
+
+    prog = programs.get("ft")
+    before = conn_count = ft_db.execute(
+        "SELECT COUNT(*) FROM applicants WHERE program='ft'").fetchone()[0]
+    term_before = dict(ft_db.execute(
+        "SELECT term, COUNT(*) FROM applicants WHERE program='ft' GROUP BY term"
+    ).fetchall())
+    biggest_term = max(term_before, key=term_before.get)
+    assert term_before[biggest_term] > 10
+
+    # Rebuild a small file containing only rows NOT in that term -- i.e. this
+    # term drops to zero, everything else is absent too (a much narrower pull).
+    src = _ox.load_workbook(FT_FILE, read_only=True, data_only=True)
+    all_rows = list(src["Export"].iter_rows(values_only=True))
+    src.close()
+    header, data_rows = all_rows[0], all_rows[1:]
+    narrow = [r for r in data_rows if r[1] != biggest_term][:50]
+
+    out = _ox.Workbook()
+    ws = out.active
+    ws.title = "Export"
+    ws.append(list(header))
+    for r in narrow:
+        ws.append(list(r))
+    buf = io.BytesIO()
+    out.save(buf)
+    buf.seek(0)
+
+    res = ingest.ingest(ft_db, buf, "ft", "narrower.xlsx", "")
+    warn = next((w for w in res["warnings"] if "FEWER rows" in w), None)
+    assert warn is not None
+    assert repr(biggest_term) in warn or (biggest_term or "(blank)") in warn
+
+    after = ft_db.execute(
+        "SELECT COUNT(*) FROM applicants WHERE program='ft'").fetchone()[0]
+    assert after >= before, "a narrower file must never reduce what is stored"
+    after_term = ft_db.execute(
+        "SELECT COUNT(*) FROM applicants WHERE program='ft' AND term=?",
+        (biggest_term,)).fetchone()[0]
+    assert after_term == term_before[biggest_term], \
+        "the shrunk term's existing rows must survive untouched"

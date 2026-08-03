@@ -47,7 +47,7 @@ Summer: 4,483 → 954 → 387.
 FY 2025/26 paid media: **$288,357** (Google $140,222 · Meta $148,135).
 Blended first-touch cost per started app ≈ **$51**.
 
-**64 tests** pass against the real sample files. If a change moves any canonical
+**65 tests** pass against the real sample files. If a change moves any canonical
 number above, that is a regression until proven otherwise.
 
 ---
@@ -139,6 +139,17 @@ Rollback lives in Render's dashboard, not git.
   page as visible body text. `tip()` emits `<p>`; don't wrap it in one.
 - **Two servers bound to port 8123**, with a stale one answering and producing
   phantom 500s. Kill by port, not by process name.
+
+## Growth-only invariant
+
+Every export should be a **superset** of the last one — more people, never
+fewer. `ingest._check_term_shrinkage` enforces this at term granularity: before
+a file is stored, it compares the file's per-term row counts against what the
+database already holds, and warns (does not block — uploads never delete)
+whenever a term comes back smaller. This exists because the 2026-08-03 Slate
+pull silently dropped 1,326 of 1,334 Winter 2026 rows — a narrower report
+filter on Slate's side, not data loss, but nothing would have surfaced it
+without this check.
 
 ## Still open
 
