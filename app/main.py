@@ -611,10 +611,11 @@ def utm_detail(request: Request):
         apps, flags = metrics.load_population(conn, program, flt.where, flt.params)
         pings = metrics.load_pings(conn, [a["id"] for a in apps])
         breakdown = metrics.top_utm_breakdown(program, apps, flags, pings, field, limit)
+        after = metrics.post_submission_touches(program, apps, flags, pings)
         return templates.TemplateResponse("utm.html", _ctx(
             request, conn, program, flt,
             breakdown=breakdown, field=field, limit=limit,
-            utm_fields=metrics.UTM_FIELDS,
+            utm_fields=metrics.UTM_FIELDS, after=after,
         ))
     finally:
         conn.close()
@@ -665,8 +666,14 @@ ATTRIBUTIONS = [
      "note": "credited to the channel that FOUND them — rows partition people, "
              "so they add up"},
     {"key": "last", "label": "Last touch",
-     "note": "credited to the channel they touched LAST — what closed them. "
-             "Also one channel per person, so these add up too"},
+     # Deliberately NOT sold as "what closed them". On this data, 91% of
+     # admitted applicants whose last touch was paid had that touch AFTER they
+     # had already submitted -- so it is usually measuring the ad that kept
+     # following them, not the one that persuaded them. See the "Touches after
+     # they'd already applied" chart on UTM detail.
+     "note": "credited to the channel they touched LAST. Careful: for most "
+             "admits that touch lands AFTER they applied, so this often shows "
+             "which ad kept following them rather than which one closed them"},
     {"key": "any", "label": "Any touch",
      "note": "credited to EVERY paid channel they touched — rows overlap, so "
              "the total is a de-duplicated count, not a sum"},

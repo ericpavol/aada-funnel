@@ -1,6 +1,8 @@
 {% extends "base.html" %}
 {% block title %}UTM detail — AADA{% endblock %}
 
+{% from "_macros.html" import tip with context %}
+
 {% block body %}
 {% if not has_data %}
   <div class="card empty">
@@ -95,6 +97,42 @@
       value(s) not shown — raise the limit above.</div>
   {% endif %}
 </section>
+
+{% if after.rows %}
+<section class="card" id="after">
+  <div class="cardhead"><div class="grow">
+    <div class="eyebrow">Timing · after the application</div>
+    <h2 class="display">Touches after they'd already <span class="serif-it">applied</span>{{ tip([
+      'Of the <b>' ~ after.submitted|num ~ '</b> people who submitted an application,
+       <b>' ~ after.any_after|num ~ '</b> were tagged again afterwards. This is the share
+       of each channel&#39;s touches that landed AFTER that person had already applied.',
+      'Read paid and organic differently. On a <b>paid</b> channel this is mostly
+       retargeting still serving ads to someone who already converted — spend that
+       cannot win anything. On an <b>organic</b> channel it is the applicant choosing to
+       come back (checking status, re-reading the programme), which is normal and not a
+       problem.',
+      'It also undercuts <b>last touch</b> as a measure of what closed someone: for
+       admitted applicants whose last touch was paid, <b>91%</b> of those touches happened
+       after they had already submitted.',
+      'Only people with a submitted date can be measured — you cannot be &#34;after&#34; a
+       date that does not exist — so the denominator here is the submitted population,
+       not everyone.',
+    ]) }}</h2>
+  </div></div>
+
+  <div class="sub" style="margin-bottom:10px">
+    <b>{{ after.any_after|num }}</b> of {{ after.submitted|num }} submitted applicants were
+    tagged again after applying · median <b>{{ after.median_days }} days</b> later ·
+    click a category (▸) to expand
+  </div>
+
+  <div class="chartbox"><canvas id="afterChart"></canvas></div>
+</section>
+
+<script>
+  AADA.postSubmitChart({{ after.rows|tojson }});
+</script>
+{% endif %}
 
 {% endif %}
 {% endblock %}

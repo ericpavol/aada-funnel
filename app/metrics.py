@@ -1153,3 +1153,100 @@ def cost_stage_payload(conn, program, any_matrix, first_matrix, stage_keys,
                                    last_matrix=last_matrix)
                 for k in stage_keys}
             for a in ("first", "last", "any")}
+
+
+def post_submission_touches(program, applicants, flags, pings_by_app):
+    """How much of each channel's activity lands AFTER someone already applied.
+
+    Retargeting keeps serving ads to people who have already converted unless
+    the ad account explicitly excludes them, and most don't. That matters here
+    because "last touch" is supposed to mean "what closed them" -- if a
+    channel's last touch usually happens months after submission, it is
+    measuring what followed them, not what persuaded them.
+
+    Only applicants with a submitted_date can be judged (you cannot be "after"
+    a date that does not exist), so the denominator is the submitted population,
+    not everyone. The caller must say so on screen.
+    """
+    sub_date = {}
+    for a in applicants:
+        d = (a["submitted_date"] or "")[:10]
+        if d:
+            sub_date[a["id"]] = d
+    if not sub_date:
+        return {"rows": [], "submitted": 0, "any_after": 0, "pings_after": 0,
+                "pings_total": 0}
+
+    rows = defaultdict(lambda: {"before": 0, "after": 0, "people": set(),
+                                "people_after": set(), "gaps": []})
+    for aid, when in sub_date.items():
+        for p in pings_by_app.get(aid, []):
+            if not p["ts"]:
+                continue
+            key = (p["channel"], p["sub_source"] or "")
+            slot = rows[key]
+            slot["people"].add(aid)
+            if p["ts"][:10] > when:
+                slot["after"] += 1
+                slot["people_after"].add(aid)
+                slot["gaps"].append(_days_between(when, p["ts"][:10]))
+            else:
+                slot["before"] += 1
+
+    # roll sub-sources up into their parent as well
+    parents = defaultdict(lambda: {"before": 0, "after": 0, "people": set(),
+                                   "people_after": set(), "gaps": []})
+    for (ch, sub), v in rows.items():
+        p = parents[ch]
+        p["before"] += v["before"]
+        p["after"] += v["after"]
+        p["people"] |= v["people"]
+        p["people_after"] |= v["people_after"]
+        p["gaps"].extend(v["gaps"])
+
+    def pack(name, v, is_sub):
+        total = v["before"] + v["after"]
+        gaps = sorted(v["gaps"])
+        return {
+            "channel": name, "is_sub": is_sub,
+            "before": v["before"], "after": v["after"], "total": total,
+            # `rate` is what the chart draws: the share of this channel's
+            # touches that arrived after the person had already applied.
+            "rate": (v["after"] / total) if total else 0.0,
+            "people": len(v["people"]), "people_after": len(v["people_after"]),
+            "median_days": gaps[len(gaps) // 2] if gaps else None,
+        }
+
+    out = []
+    for ch in taxonomy.canonical_order_index(list(parents)):
+        row = pack(ch, parents[ch], False)
+        subs = [pack(sub, v, True) for (c, sub), v in rows.items()
+                if c == ch and sub]
+        subs.sort(key=lambda r: -r["after"])
+        row["subs"] = subs
+        row["hidden_subs"] = 0
+        out.append(row)
+    out.sort(key=lambda r: -r["after"])
+
+    all_gaps = sorted(g for v in parents.values() for g in v["gaps"])
+    people_after = set()
+    for v in parents.values():
+        people_after |= v["people_after"]
+    return {
+        "rows": out,
+        "submitted": len(sub_date),
+        "any_after": len(people_after),
+        "pings_after": sum(r["after"] for r in out),
+        "pings_total": sum(r["total"] for r in out),
+        "median_days": all_gaps[len(all_gaps) // 2] if all_gaps else None,
+    }
+
+
+def _days_between(a, b):
+    import datetime as _d
+    try:
+        da = _d.date(*map(int, a.split("-")))
+        db_ = _d.date(*map(int, b.split("-")))
+        return (db_ - da).days
+    except (ValueError, TypeError):
+        return 0

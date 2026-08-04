@@ -1616,6 +1616,28 @@
     });
   }
 
+  /** Share of each channel's touches that landed after the person had already
+   *  applied. Reuses the expandable bar chart so it reads like the other
+   *  channel views, and colours by the same canonical slot. */
+  function postSubmitChart(rows) {
+    expandableBars("afterChart", rows, {
+      seriesLabel: "after applying",
+      value: function (r) { return r.rate; },
+      baseline: null,
+      tooltip: function (r) {
+        var out = [
+          pctFmt(r.rate) + " of touches came after applying",
+          numFmt(r.after) + " of " + numFmt(r.total) + " touches",
+          numFmt(r.people_after) + " people affected"
+        ];
+        if (r.median_days != null) {
+          out.push("median " + numFmt(r.median_days) + " days after submitting");
+        }
+        return out;
+      }
+    });
+  }
+
   /* ------------------------------------------------------------------ wire up */
   function init() {
     syncThemeButton();
@@ -1639,6 +1661,7 @@
 
   window.AADA = {
     spendChart: spendChart,
+    postSubmitChart: postSubmitChart,
     costChart: costChart,
     wireCostTable: wireCostTable,
     wireSpendPicker: wireSpendPicker,

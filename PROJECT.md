@@ -47,7 +47,7 @@ Summer: 4,483 → 954 → 387.
 FY 2025/26 paid media: **$288,357** (Google $140,222 · Meta $148,135).
 Blended first-touch cost per started app ≈ **$51**.
 
-**69 tests** pass against the real sample files. If a change moves any canonical
+**70 tests** pass against the real sample files. If a change moves any canonical
 number above, that is a regression until proven otherwise.
 
 ---
@@ -85,10 +85,18 @@ merge and committing the next change directly to it — reaching `main` and goin
 live were the same instant, so there was no gap to catch it.
 
 Now `render.yaml` sets `autoDeploy: false`. Reaching `main` no longer deploys by
-itself — a deploy happens only when Render's Sync Hook URL is called
-explicitly, a separate deliberate step after the merge. The hook URL is a
-capability, not unlike an API key: never commit it, never paste it anywhere
-public. Rollback lives in Render's dashboard, not git.
+itself — a deploy is triggered explicitly, as a separate step after the merge.
+
+**Two different Render hooks, easy to confuse — I confused them once and a
+deploy silently never happened:**
+- **Blueprint Sync Hook** (`api.render.com/sync/...`) re-reads `render.yaml`
+  and applies config changes (services, env vars, disk). If `render.yaml` did
+  not change, it returns `201` and does nothing visible. This is NOT a deploy.
+- **Service Deploy Hook** (per-service, from that service's **Settings** tab)
+  is what actually deploys the latest commit. This is the one to call.
+
+Either URL is a capability, like an API key: never commit it, never paste it
+anywhere public. Rollback lives in Render's dashboard, not git.
 
 ---
 
@@ -99,7 +107,8 @@ public. Rollback lives in Render's dashboard, not git.
   silently mixed intake years. "All time" is one click away, so it's a starting
   point rather than a hidden filter.
 - **Three attribution lenses, as a user-facing toggle**: first touch (what
-  found them), last touch (what closed them), any touch (everything they
+  found them), last touch (what touched them last — *not* reliably "what closed
+  them", see the caveat below), any touch (everything they
   touched). First and last each put a person in exactly one channel and
   therefore **sum**; any touch overlaps and its blended figure comes from a
   **set union**, never a column sum. The disagreement between lenses is the
@@ -143,6 +152,18 @@ public. Rollback lives in Render's dashboard, not git.
   credit, unbounded). On current data they line up closely — median gap between
   first ping and app start is 0 days — but that's a property of this data, not a
   guarantee.
+- **Last touch is NOT "what closed them."** Retargeting keeps serving ads after
+  someone converts unless the ad account excludes converters, and most don't.
+  On this data **32% of submitted applicants get tagged again afterwards**
+  (median 44 days later), and of admits whose last touch was paid, **91% of
+  those touches landed after they had already submitted**. It is overwhelmingly
+  Google PMax (6,260 of 6,559 post-submission paid pings); Meta barely does it
+  (10.9% vs PMax's 52.8%), which is itself a finding — PMax is spending half its
+  impressions on people who already applied. Surfaced as "Touches after they'd
+  already applied" on UTM detail, and called out in the Last-touch toggle note.
+  **Read paid and organic differently there:** on an organic channel a
+  post-submission touch is the applicant choosing to come back (Google Organic
+  is 58%, higher than Paid) — normal, not waste.
 - **Paid channels only.** Organic, email, and direct mail carry real cost no ad
   platform exports. They show a dash, never `$0`.
 - **Date filter honours whole months** for spend. A range inside one month counts

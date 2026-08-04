@@ -1658,3 +1658,45 @@ def test_hidden_attribute_cannot_be_overridden_by_a_class_rule():
         assert re.search(r"\." + cls + r"\{[^}]*display\s*:", css), \
             ".%s no longer sets display -- if that changed, confirm the " \
             "[hidden] override is still needed for it" % cls
+
+
+def test_post_submission_touches_measure_only_the_submitted(ft_db):
+    """Retargeting keeps serving ads after someone converts. This measures how
+    much of each channel's activity lands after the person already applied —
+    which is what undermines "last touch" as a measure of what closed them.
+
+    Only people with a submitted date can be judged; you cannot be "after" a
+    date that does not exist. The denominator must therefore be the submitted
+    population, never everyone."""
+    prog = programs.get("ft")
+    flt = filters.Filters(prog)
+    apps, flags = metrics.load_population(ft_db, prog, flt.where, flt.params)
+    pings = metrics.load_pings(ft_db, [a["id"] for a in apps])
+
+    res = metrics.post_submission_touches(prog, apps, flags, pings)
+    submitted = sum(1 for a in apps if (a["submitted_date"] or "").strip())
+    assert res["submitted"] == submitted
+    assert 0 < submitted < len(apps), "denominator must be the submitted subset"
+    assert res["any_after"] <= submitted
+
+    for row in res["rows"]:
+        assert row["before"] + row["after"] == row["total"]
+        assert row["rate"] == pytest.approx(
+            row["after"] / row["total"] if row["total"] else 0)
+        assert 0.0 <= row["rate"] <= 1.0
+        assert row["people_after"] <= row["people"]
+        # a parent's touches include every one of its sub-sources'
+        if row["subs"]:
+            assert sum(s["after"] for s in row["subs"]) <= row["after"]
+
+    # Paid search retargeting is the whole reason this exists: Google's share
+    # of post-submission touches should dwarf Meta's on this data.
+    by_name = {r["channel"]: r for r in res["rows"]}
+    assert by_name[spend.GOOGLE_CHANNEL]["after"] > \
+        by_name[spend.META_CHANNEL]["after"] * 10
+
+    # Nobody with no submitted date can contribute.
+    no_sub = [a["id"] for a in apps if not (a["submitted_date"] or "").strip()]
+    trimmed = {k: v for k, v in pings.items() if k in set(no_sub)}
+    empty = metrics.post_submission_touches(prog, apps, flags, trimmed)
+    assert empty["pings_after"] == 0

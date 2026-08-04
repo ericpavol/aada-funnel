@@ -186,7 +186,9 @@ h2.display{font-size:23px}
   padding:11px 20px;display:flex;align-items:center;gap:16px;flex-wrap:wrap;
 }
 .brand{font-family:var(--f-display);font-size:30px;line-height:1;letter-spacing:-.025em;
-  display:flex;align-items:baseline;gap:10px;white-space:nowrap;color:var(--ink)}
+  display:flex;align-items:baseline;gap:10px;white-space:nowrap;color:var(--ink);
+  text-decoration:none}
+.brand:hover{color:var(--accent-strong)}
 .brand small{font-family:var(--f-ui);font-size:11px;font-weight:500;color:var(--ink-3);
   letter-spacing:.02em}
 
