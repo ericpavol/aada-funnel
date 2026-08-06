@@ -61,6 +61,8 @@
        href="/utm?{{ qs(filters) }}">UTM detail</a>
     <a class="{{ 'on' if request.url.path == '/referrers' else '' }}"
        href="/referrers?{{ qs(filters) }}">Referrers</a>
+    <a class="{{ 'on' if request.url.path == '/ads' else '' }}"
+       href="/ads?{{ qs(filters) }}">Ad Performance</a>
     <a class="{{ 'on' if request.url.path == '/uploads' else '' }}"
        href="/uploads?{{ qs(filters) }}">Data{% if unknown_count %}<span class="badge">{{ unknown_count }}</span>{% endif %}</a>
   </nav>

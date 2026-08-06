@@ -438,6 +438,12 @@ select[multiple] option:checked{background:var(--accent);color:var(--accent-fg)}
 .chartbox.tall{height:430px}
 .chartbox.sm{height:250px}
 
+/* ======================== embedded reports ======================== */
+/* No auto-resize from Looker Studio (confirmed empirically), so the iframe's
+   own height attribute is the source of truth, not this wrapper. */
+.lookerwrap{margin-top:18px;border-top:1px solid var(--ring-2)}
+.lookerwrap iframe{display:block;width:100%;border:0}
+
 /* ==================== series tree picker ====================
    Parents with sub-sources nested under them, shared by the timeline and the
    stage-presence chart. Collapsed to a one-line summary by default: it is a

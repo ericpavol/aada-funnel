@@ -100,6 +100,29 @@ anywhere public. Rollback lives in Render's dashboard, not git.
 
 ---
 
+### Ad performance: embedded Looker Studio report, not API-connected
+`/ads` shows Meta/Google ad performance via an `<iframe>` embed of a Looker
+Studio report Eric already built — **not** a Google/Meta Ads API integration.
+This app never touches ad-platform credentials or makes the request itself;
+the browser loads the report directly from `lookerstudio.google.com`, so it is
+the one page whose data does not come from this app's own database and the one
+place client-side network calls to an external host happen at all.
+
+Deliberately **not** wired to the app's date/program filter bar: Looker's own
+native controls (campaign multi-select, date range) already work inside the
+iframe with zero custom code, and testing showed the embed does **not**
+support auto-resize (`postMessage` fires once on load with an empty height
+field), so each report page pins a fixed iframe height (`AD_REPORT_PAGES` in
+`main.py`) rather than trying to size to content.
+
+Nav label landed on "Ad Performance" over "Meta & Google" or "Reports" — names
+the funnel stage it's showing, matching how every other nav entry names a
+view rather than a data source. Multiple report pages (more are coming) share
+one nav entry with an internal tab bar (`?page=<key>`, same URL-driven pattern
+as the Cost page's attribution/stage tabs) rather than one top-level nav entry
+per page, so the segmented nav doesn't grow unbounded as pages are added —
+adding a page is one entry in `AD_REPORT_PAGES`, not a nav/route change.
+
 ## Analytical decisions worth not re-litigating
 
 - **Fiscal year is 1 Sept → 31 Aug**, and a date filter on app start date is

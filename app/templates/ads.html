@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% block title %}Ad performance — AADA{% endblock %}
+
+{# This page isn't driven by the app's own filters -- the report has its own
+   native date range and campaign controls inside the iframe -- so the usual
+   date/program filter bar would just be misleading chrome here. #}
+{% block filterbar %}{% endblock %}
+
+{% block body %}
+<section class="card pad0">
+  <div style="padding:18px 20px 0">
+    <div class="cardhead">
+      <div class="grow">
+        <div class="eyebrow">Meta &amp; Google</div>
+        <h1 class="display">Ad <span class="serif-it">performance</span></h1>
+        <div class="sub" style="margin-top:5px">Live report, not this app's data —
+          filter and drill in with the controls inside it below.</div>
+      </div>
+    </div>
+
+    {% if ad_pages|length > 1 %}
+      <div class="tabsm" style="margin-bottom:9px">
+        {% for p in ad_pages %}
+          <a class="{{ 'on' if p.key == ad_page.key else '' }}"
+             href="/ads?{{ qs_set(request, 'page', none if p.key == ad_pages[0].key else p.key) }}">{{ p.label }}</a>
+        {% endfor %}
+      </div>
+    {% endif %}
+  </div>
+
+  <div class="lookerwrap">
+    <iframe src="{{ ad_page.embed_src }}" height="{{ ad_page.height }}"
+            allowfullscreen title="{{ ad_page.label }} — Meta &amp; Google ad performance"></iframe>
+  </div>
+</section>
+{% endblock %}

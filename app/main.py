@@ -1,7 +1,9 @@
 """FastAPI app: upload Slate exports, report the funnel by channel.
 
-Server-rendered (Jinja2) with Chart.js vendored locally -- no build step and no
-external network calls, so applicant data never leaves the machine.
+Server-rendered (Jinja2) with Chart.js vendored locally -- no build step, and no
+applicant data ever leaves this machine. The one exception is /ads: the browser
+loads an embedded Looker Studio report directly from lookerstudio.google.com,
+which carries no applicant data (see AD_REPORT_PAGES below).
 """
 import os
 from typing import Optional
@@ -29,6 +31,21 @@ app.mount("/static", StaticFiles(directory=os.path.join(HERE, "static")), name="
 templates = Jinja2Templates(directory=os.path.join(HERE, "templates"))
 
 DB_PATH = os.environ.get("AADA_DB", db.DEFAULT_DB)
+
+# Meta/Google ad performance, via an embedded Looker Studio report -- not this
+# app's own data, and not sourced through it. One entry per report page; the
+# iframe has no auto-resize support (tested: postMessage fires once on load
+# with an empty height field), so each page pins its own iframe height rather
+# than trying to size to content.
+AD_REPORT_PAGES = [
+    {
+        "key": "overview",
+        "label": "Overview",
+        "embed_src": "https://lookerstudio.google.com/embed/reporting/"
+                      "e04a2a3f-fcee-47d8-87d5-0903bbc8a019/page/p_e5y856ncwd",
+        "height": 1600,
+    },
+]
 
 
 def get_conn():
@@ -651,6 +668,29 @@ def referrers(request: Request):
             has_refs=has_refs, summary=summary, breakdown=referrer_rows,
             terms=terms, group=group, scope=scope, limit=limit,
             ref_groups=metrics.REF_GROUPS, ref_scopes=metrics.REF_SCOPES,
+        ))
+    finally:
+        conn.close()
+
+
+@app.get("/ads", response_class=HTMLResponse)
+def ads(request: Request):
+    """Meta/Google ad performance -- an embedded Looker Studio report.
+
+    Deliberately not wired to this app's date/program filters: Looker's own
+    interactive controls (campaign multi-select, date range) already work
+    inside the iframe with zero custom code, and the report isn't scoped to
+    'FT vs Summer' the way applicant data is, so there is nothing correct for
+    this app's filter bar to drive.
+    """
+    conn = get_conn()
+    try:
+        program, flt = _resolve(request)
+        page_key = request.query_params.get("page")
+        page = next((p for p in AD_REPORT_PAGES if p["key"] == page_key), AD_REPORT_PAGES[0])
+        return templates.TemplateResponse("ads.html", _ctx(
+            request, conn, program, flt,
+            ad_pages=AD_REPORT_PAGES, ad_page=page,
         ))
     finally:
         conn.close()
