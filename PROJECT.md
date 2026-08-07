@@ -102,6 +102,25 @@ where HEAD happened to be sitting — is guarded by **switching back to `dev`
 immediately after every merge**, and by checking `git branch --show-current`
 before any commit. Both are cheap; neither depends on this flag.
 
+**Flipping the flag needs a sync AND a push.** Render's *live* config is what
+governs, not what `render.yaml` says on `main`. Turning auto-deploy back on
+took three steps: push the change, call the Blueprint Sync Hook to apply it
+(the one thing that hook genuinely does), then push a further commit — the
+push that carried the change could not deploy itself, because at that instant
+Render still had the old setting. Confirmed empirically both ways: after the
+sync returned `201`, `/static/app.css` served the old build for 7 more minutes;
+the next commit deployed in ~90s.
+
+Render has since renamed this field to `autoDeployTrigger`. `autoDeploy` is
+still honoured, but check the current
+[blueprint spec](https://render.com/docs/blueprint-spec) before editing it.
+
+**Verifying a deploy without the dashboard:** everything under `/static` is
+outside the login gate, so `curl`-ing an asset and grepping for a string only
+the new build contains proves *which build is serving* — the app's own routes
+all answer `401` and can't distinguish builds. A route's existence is
+checkable the same way: a real path answers `401`, a nonexistent one `404`.
+
 If a hook URL is ever used again: it is a capability, like an API key. Never
 commit it, never paste it anywhere public. Rollback lives in Render's
 dashboard, not git.
