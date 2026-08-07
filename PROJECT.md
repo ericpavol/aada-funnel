@@ -9,7 +9,7 @@ what is still open — the parts that don't survive in the code.
 same change. A stale entry here is worse than a missing one, because it will be
 trusted.
 
-_Last updated: 2026-08-03_
+_Last updated: 2026-08-07_
 
 ---
 
@@ -78,25 +78,33 @@ handful of people or per-person accountability starts to matter.
 The GitHub repo is public; the data never enters it. The hosted instance starts
 empty and needs its own one-time upload via `/uploads`.
 
-### `dev` → `main` branch workflow, deploy gated separately
-Work happens on `dev`; merging to `main` used to BE the deploy (Render
-auto-deployed on push). Turned off after a real slip: staying on `main` after a
-merge and committing the next change directly to it — reaching `main` and going
-live were the same instant, so there was no gap to catch it.
+### `dev` → `main` branch workflow, auto-deploy on `main`
+Work happens on `dev`. It reaches `main` only via an explicit, asked-for merge
+(`git merge dev --ff-only`), and `render.yaml` sets `autoDeploy: true`, so
+pushing `main` deploys.
 
-Now `render.yaml` sets `autoDeploy: false`. Reaching `main` no longer deploys by
-itself — a deploy is triggered explicitly, as a separate step after the merge.
+**This flag was flipped off once and flipped back — don't flip it again without
+reading why.** It was turned off after a real slip: staying on `main` after a
+merge and committing the next change directly to it, with no gap to catch it.
+But "deploy by hand instead" did not survive contact with reality:
 
-**Two different Render hooks, easy to confuse — I confused them once and a
-deploy silently never happened:**
-- **Blueprint Sync Hook** (`api.render.com/sync/...`) re-reads `render.yaml`
-  and applies config changes (services, env vars, disk). If `render.yaml` did
-  not change, it returns `201` and does nothing visible. This is NOT a deploy.
-- **Service Deploy Hook** (per-service, from that service's **Settings** tab)
-  is what actually deploys the latest commit. This is the one to call.
+- The **Blueprint Sync Hook** (`api.render.com/sync/...`) only re-reads this
+  `render.yaml` and applies config changes. It returns `201` and deploys
+  nothing. Using it as a deploy trigger meant a deploy silently never happened.
+- The **Service Deploy Hook** (per-service, that service's **Settings** tab) is
+  the one that actually deploys — but obtaining it means going into the Render
+  dashboard, and Eric's requirement is explicitly that deploys cost him zero
+  dashboard time. So the manual-trigger route had no path that met the brief.
 
-Either URL is a capability, like an API key: never commit it, never paste it
-anywhere public. Rollback lives in Render's dashboard, not git.
+**The gate was never the flag.** It is that nothing reaches `main` unless Eric
+asks for it. The actual failure mode — committing to `main` because that's
+where HEAD happened to be sitting — is guarded by **switching back to `dev`
+immediately after every merge**, and by checking `git branch --show-current`
+before any commit. Both are cheap; neither depends on this flag.
+
+If a hook URL is ever used again: it is a capability, like an API key. Never
+commit it, never paste it anywhere public. Rollback lives in Render's
+dashboard, not git.
 
 ---
 

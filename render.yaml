@@ -12,10 +12,18 @@ services:
     plan: starter
     buildCommand: pip install -r requirements.txt
     startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
-    # Deliberately off: reaching `main` on GitHub used to mean instantly live,
-    # with no gap to catch a mistake. Deploys are now triggered on purpose via
-    # Render's Sync Hook URL, not automatically on push.
-    autoDeploy: false
+    # On: a push to `main` deploys. This was briefly turned off in favour of
+    # triggering each deploy by hand, which failed in practice -- the Blueprint
+    # Sync Hook only re-applies THIS file's config and does not deploy code, and
+    # the per-service Deploy Hook that would have worked needs pulling from the
+    # dashboard by hand, which defeats the point of not touching the dashboard.
+    #
+    # The safety gate was never really this flag: it is that work happens on
+    # `dev` and only reaches `main` via an explicit, asked-for merge. What
+    # actually went wrong once was staying on `main` AFTER a merge and
+    # committing there. The guard for that is switching back to `dev`
+    # immediately after every merge -- see PROJECT.md.
+    autoDeploy: true
     disk:
       name: aada-funnel-data
       mountPath: /var/data
