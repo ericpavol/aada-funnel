@@ -63,7 +63,7 @@
       <tr class="{{ 'parent' if row.is_parent else 'sub' }}{{ ' muted' if row.channel == NO_UTM else '' }}">
         <td class="chan">
           {% set ent = row.channel if row.is_parent else (row.channel ~ ' › ' ~ row.sub_source) %}
-          {% if ent in series_index %}
+          {% if ent in series_index and series_index[ent] is not none %}
             <span class="swatchdot" style="background:var(--s{{ series_index[ent] + 1 }})"></span>
           {% endif %}
           {{ row.channel if row.is_parent else row.sub_source }}
