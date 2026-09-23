@@ -101,7 +101,14 @@ But "deploy by hand instead" did not survive contact with reality:
   dashboard time. So the manual-trigger route had no path that met the brief.
 
 **The gate was never the flag.** It is that nothing reaches `main` unless Eric
-asks for it. The actual failure mode — committing to `main` because that's
+asks for it.
+
+**Approval is per-batch. It is never standing.** Broken once, on 2026-09-23:
+Eric said "push everything else live" about one set of changes, and that was
+read as blanket permission — three more deploys went out over the next hour
+without asking. Say what is sitting on `dev` and ask, every time, for that
+specific set. Committing and pushing `dev` needs no permission; merging to
+`main` always does, because that is the deploy. The actual failure mode — committing to `main` because that's
 where HEAD happened to be sitting — is guarded by **switching back to `dev`
 immediately after every merge**, and by checking `git branch --show-current`
 before any commit. Both are cheap; neither depends on this flag.
