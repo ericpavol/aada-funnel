@@ -51,7 +51,7 @@ Summer: 4,483 → 954 → 387.
 FY 2025/26 paid media: **$288,357** (Google $140,222 · Meta $148,135).
 Blended first-touch cost per started app ≈ **$51**.
 
-**74 tests** pass against the real sample files. If a change moves any canonical
+**78 tests** pass against the real sample files. If a change moves any canonical
 number above, that is a regression until proven otherwise.
 
 ---
@@ -162,6 +162,51 @@ so existing rows got it without a re-upload.
 which means the older 2026-08 layout's anchors still match a new file. Layout
 order is the only thing stopping the pathway being silently dropped —
 `FT_2026_09` must stay first in `Program.layouts`. There is a test pinning this.
+
+### Facet counts respect the other active filters
+Every picker's counts are computed against whatever else is currently
+filtered — pick FY 2026/27 and the Degree picker says how many AOS and BFA
+people are *in that year*. They used to be whole-program totals, which made a
+filtered page quietly contradict itself.
+
+Each dimension is counted with its **own** selection removed
+(`Filters.without`). That is not an optimisation, it is the thing that keeps a
+multi-select usable: count a dimension against itself and every value the user
+has not ticked reads 0, so a selection can never be widened again.
+
+### One programme, one spelling
+`programs.canonical_emphasis` collapses `Acting for Theatre, Film, and
+Television` onto `Acting for Film, Television & Theatre` — same programme, word
+order changed, previously two options in every filter and two rows in every
+chart. `db._migrate_emphasis` rewrites stored rows on connect. Unlike term,
+emphasis is not part of the dedup key, so this is a plain UPDATE.
+
+Deliberately an **explicit alias map**, not a fuzzy word-set match: a
+fingerprint that ignores word order would merge two programmes that genuinely
+differ only by order. Add a line when Slate invents another spelling; never
+widen it into a heuristic. The degree prefix is split off and re-attached, so
+one entry covers the AOS and BFA spellings both.
+
+### Overall funnel splits by degree
+Under the headline funnel each stage also shows AOS and BFA counts
+(`metrics.funnel_by`). Rows with a blank degree are **skipped, not pooled**, so
+the two groups do not necessarily sum to the headline — deliberate, because a
+third bar made of "we don't know" reads as a third programme. Shown as plain
+chips rather than a stacked bar: BFA is ~4% of AOS, and any shared scale draws
+it as a sliver.
+
+### Tip popovers are positioned in JS, not guessed in CSS
+A `.tip-pop` is 430px wide and absolutely positioned, and an absolutely
+positioned box counts toward scrollable overflow **even while hidden** — which
+put a horizontal scrollbar and a band of dead space on the right of every page.
+
+Clipping does not fix it: an `overflow` value on `html` *or* `body` propagates
+to the viewport and leaves the element itself `visible`, so neither clips its
+own children. Both were tried. The popovers have to actually fit, so `app.js`
+(`wireTipFlip`) measures each one on load, on resize and on hover, and flips it
+leftward when it would run off. The old CSS-only guess
+(`.grid2 section:last-child`) caught one of the four places a tip sits near the
+right edge.
 
 ### "Started" is offered on both channel cards
 `Which channels convert to X` and `Which channels make up X` withheld Started;
@@ -311,13 +356,6 @@ without this check.
 
 ## Still open
 
-- **Full-Time emphasis has two spellings for one programme.** The data holds
-  both `Acting for Film, Television & Theatre` and
-  `Acting for Theatre, Film, and Television` (~1.3k rows on the older label).
-  Same programme, word order changed — the same class of problem as the
-  Winter→Spring rename, and a candidate for the same fix
-  (`programs.canonical_term`'s sibling). Left alone for now because nobody has
-  confirmed they are genuinely the same, and collapsing them changes a facet.
 - **Spend from TikTok, ChatGPT (Paid) and Microsoft Ads** is coming (Eric,
   2026-09-23; files not supplied yet). Channel-side: `TikTok` and
   `AI Referral (ChatGPT etc.)` already exist in `taxonomy.py`, but both sit

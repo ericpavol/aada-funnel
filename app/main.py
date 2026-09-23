@@ -285,7 +285,8 @@ CAVEAT_CAUSATION = (
 
 
 def _ctx(request, conn, program, flt, **extra):
-    facets = filters.facet_values(conn, program)
+    # Counts inside each picker respect the other active filters.
+    facets = filters.facet_values(conn, program, flt)
     # Unfiltered population, so the bar can say "1,204 of 8,436".
     program_total = conn.execute(
         "SELECT COUNT(*) FROM applicants WHERE program=?", (program.key,)
@@ -384,6 +385,11 @@ def overview(request: Request):
         pings = metrics.load_pings(conn, [a["id"] for a in apps])
 
         overall = metrics.overall_funnel(program, flags)
+        # AOS vs BFA beside the headline funnel. Blank-degree rows are
+        # excluded, so these two do not sum to `overall` -- see funnel_by.
+        overall_split = (metrics.funnel_by(program, apps, flags, "degree",
+                                          order=[programs.AOS, programs.BFA])
+                         if program.has_degree else [])
         any_touch = metrics.build_matrix(program, apps, flags, pings, "any")
         first_touch = metrics.build_matrix(program, apps, flags, pings, "first")
         last_touch = metrics.build_matrix(program, apps, flags, pings, "last")
@@ -598,6 +604,7 @@ def overview(request: Request):
             cost_stage=cost_stage, cost_stage_opts=program.stage_keys,
             cost_attr=cost_attr, attributions=ATTRIBUTIONS,
             cost_payload=cost_payload,
+            overall_split=overall_split,
             chart_penetration=chart_penetration,
             series_index=series_index,
             pen_tree=pen_tree, pen_selected=pen_selected, pen_all=pen_all,

@@ -226,8 +226,26 @@ def _migrate(conn):
         if col not in have:
             conn.execute("ALTER TABLE %s ADD COLUMN %s %s" % (table, col, decl))
     _migrate_terms(conn)
+    _migrate_emphasis(conn)
     _backfill_degree(conn)
     conn.commit()
+
+
+def _migrate_emphasis(conn):
+    """Collapse rows stored under an older spelling of the same programme.
+
+    Unlike term, emphasis is NOT part of the applicant dedup key, so this is a
+    plain UPDATE with no risk of a UNIQUE collision. Runs on every connect and
+    is a no-op once nothing is left to rename.
+    """
+    from . import programs
+    rows = conn.execute(
+        "SELECT DISTINCT emphasis FROM applicants WHERE emphasis <> ''").fetchall()
+    for r in rows:
+        old, new = r["emphasis"], programs.canonical_emphasis(r["emphasis"])
+        if new != old:
+            conn.execute("UPDATE applicants SET emphasis=? WHERE emphasis=?",
+                         (new, old))
 
 
 def _backfill_degree(conn):

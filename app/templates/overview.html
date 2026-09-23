@@ -138,6 +138,17 @@
             <span class="step-n">{{ s.n|num }}</span>
             <span class="step-pct">{{ s.pct_of_started|pct }}</span>
           </div>
+          {% if overall_split %}
+            {# Per-degree counts for the same stage. Not a stacked bar: the two
+               programmes are at wildly different scales (BFA is ~3% of AOS),
+               so a shared bar would render BFA as a sliver. #}
+            <div class="step-split">
+              {% for g in overall_split %}
+                <span class="chip-split"><b>{{ g.name }}</b> {{ g.counts[s.key]|num }}<span
+                  class="muted">·{{ (g.counts[s.key] / g.counts['started'] if g.counts['started'] else 0)|pct }}</span></span>
+              {% endfor %}
+            </div>
+          {% endif %}
         </div>
       {% endfor %}
     </div>
@@ -146,29 +157,6 @@
 
 {# ---------- 2. COMPARISON ---------- #}
 <div class="grid2">
-  <section class="card" id="convert">
-    <div class="cardhead">
-      <div class="grow">
-        <div class="eyebrow">Channel quality</div>
-        <h2 class="display">Which channels <span class="serif-it">convert</span>
-          to <span data-stagetext="cvs">{{ comparison.final_label }}</span>{{ tip([
-          'Of the people who touched a channel, the share that reached
-           <b data-stagetext="cvs">' ~ comparison.final_label ~
-          '</b>. Sorted best first; the dashed line is everyone&#39;s rate to the same
-           stage, so it moves with the selection. This card&#39;s stage is its own —
-           it does not change the chart beside it.',
-          'Channels under ' ~ comparison.min_n ~ ' people are hidden so a handful of applicants
-           cannot top the chart. Click a category to expand its sub-sources.',
-        ]) }}</h2>
-      </div>
-    </div>
-    <div class="sub" style="margin-bottom:10px">Share of each channel’s people
-      reaching <b data-stagetext="cvs">{{ comparison.final_label }}</b> · click a
-      category (▸) to expand its sub-sources</div>
-    {{ stage_pick('cvs', cmp_stage, 'convert') }}
-    <div class="chartbox"><canvas id="cmpChart"></canvas></div>
-  </section>
-
   <section class="card" id="makeup">
     <div class="cardhead">
       <div class="grow">
@@ -192,7 +180,35 @@
       click a category (▸) to expand</div>
     {{ stage_pick('mvs', mk_stage, 'makeup') }}
     <div class="chartbox"><canvas id="mkChart"></canvas></div>
+    <div class="sub" style="margin-top:10px;text-align:right">
+      <b data-stagetotal="mvs">{{ makeup.final_total|num }}</b> people reached
+      <b data-stagetext="mvs">{{ makeup.final_label }}</b> in total ·
+      channel counts overlap, so they add up to more than this
+    </div>
   </section>
+  <section class="card" id="convert">
+    <div class="cardhead">
+      <div class="grow">
+        <div class="eyebrow">Channel quality</div>
+        <h2 class="display">Which channels <span class="serif-it">convert</span>
+          to <span data-stagetext="cvs">{{ comparison.final_label }}</span>{{ tip([
+          'Of the people who touched a channel, the share that reached
+           <b data-stagetext="cvs">' ~ comparison.final_label ~
+          '</b>. Sorted best first; the dashed line is everyone&#39;s rate to the same
+           stage, so it moves with the selection. This card&#39;s stage is its own —
+           it does not change the chart beside it.',
+          'Channels under ' ~ comparison.min_n ~ ' people are hidden so a handful of applicants
+           cannot top the chart. Click a category to expand its sub-sources.',
+        ]) }}</h2>
+      </div>
+    </div>
+    <div class="sub" style="margin-bottom:10px">Share of each channel’s people
+      reaching <b data-stagetext="cvs">{{ comparison.final_label }}</b> · click a
+      category (▸) to expand its sub-sources</div>
+    {{ stage_pick('cvs', cmp_stage, 'convert') }}
+    <div class="chartbox"><canvas id="cmpChart"></canvas></div>
+  </section>
+
 </div>
 
 {# Cost sits beside First-touch mix on purpose: that chart says which channel

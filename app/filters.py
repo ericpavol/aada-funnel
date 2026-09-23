@@ -227,6 +227,36 @@ class Filters:
             add("stage", "Reached", [self.program.stage_labels[self.stage]])
         return out
 
+    def without(self, *dimensions):
+        """Copy of this filter with the named dimensions cleared.
+
+        Facet counts use it. A dimension's own selection must not constrain its
+        own option counts, or every value the user has NOT ticked reads 0 and
+        the picker becomes unusable -- you could never widen a selection,
+        because everything else would look empty.
+        """
+        drop = set(dimensions)
+
+        def keep(key, vals):
+            return [] if key in drop else list(vals)
+
+        dated = "date" not in drop
+        return Filters(
+            self.program,
+            terms=keep("term", self.terms),
+            regions=keep("region", self.regions),
+            countries=keep("country", self.countries),
+            emphases=keep("emphasis", self.emphases),
+            degrees=keep("degree", self.degrees),
+            pathways=keep("pathway", self.pathways),
+            age_bands=keep("age", self.age_bands),
+            channels=keep("channel", self.channels),
+            date_field=self.date_field if dated else None,
+            date_from=self.date_from if dated else None,
+            date_to=self.date_to if dated else None,
+            stage=None if "stage" in drop else self.stage,
+        )
+
     def query_dict(self):
         """Round-trip the filter state back into query params (for links)."""
         d = {"program": self.program.key}
@@ -247,9 +277,22 @@ class Filters:
         return d
 
 
-def facet_values(conn, program):
-    """Distinct filter options actually present in the data, for the filter bar."""
-    def col(name, alpha=False, blank=True):
+def facet_values(conn, program, flt=None):
+    """Filter options present in the data, with counts, for the filter bar.
+
+    Counts respect whatever else is currently filtered -- pick FY 2026/27 and
+    the Degree picker should say how many AOS and BFA people are in THAT year,
+    not in all time. Each dimension is counted against every filter EXCEPT its
+    own (see Filters.without), which is what lets a multi-select still be
+    widened once something is ticked.
+    """
+    base = flt or Filters(program)
+
+    def scope(dimension):
+        f = base.without(dimension)
+        return f.where, list(f.params)
+
+    def col(name, dimension, alpha=False, blank=True):
         """Distinct values for one column, plus a "(no value)" bucket.
 
         `alpha` sorts A-Z instead of by volume. Term uses it: there are only a
@@ -258,10 +301,11 @@ def facet_values(conn, program):
         High-cardinality columns (80 regions) stay volume-ranked, because there
         the useful ones are the big ones and the picker has a search box.
         """
+        where, params = scope(dimension)
         rows = conn.execute(
-            "SELECT %s AS v, COUNT(*) AS n FROM applicants WHERE program=? AND %s<>''"
-            " GROUP BY %s" % (name, name, name),
-            (program.key,),
+            "SELECT %s AS v, COUNT(*) AS n FROM applicants WHERE %s AND %s<>''"
+            " GROUP BY %s" % (name, where, name, name),
+            params,
         ).fetchall()
         out = [(r["v"], r["n"]) for r in rows]
         if alpha:
@@ -269,26 +313,27 @@ def facet_values(conn, program):
         else:
             out.sort(key=lambda kv: (-kv[1], str(kv[0])))
         n_blank = blank and conn.execute(
-            "SELECT COUNT(*) FROM applicants WHERE program=? AND %s=''" % name,
-            (program.key,)).fetchone()[0]
+            "SELECT COUNT(*) FROM applicants WHERE %s AND %s=''" % (where, name),
+            params).fetchone()[0]
         if n_blank:
             # Always last: it is a catch-all, not a value, so it should not sit
             # in the middle of an A-Z run or above real terms in a ranked one.
             out.append((NONE_TOKEN, n_blank))
         return out
 
+    ch_where, ch_params = scope("channel")
     channels = conn.execute(
-        "SELECT p.channel AS v, COUNT(DISTINCT p.applicant_id) AS n"
-        " FROM pings p JOIN applicants a ON a.id = p.applicant_id"
-        " WHERE a.program=? AND p.channel<>''"
-        " GROUP BY p.channel ORDER BY n DESC", (program.key,),
+        "SELECT p.channel AS v, COUNT(DISTINCT p.applicant_id) AS n FROM pings p"
+        " WHERE p.channel<>'' AND p.applicant_id IN"
+        "       (SELECT id FROM applicants WHERE %s)"
+        " GROUP BY p.channel ORDER BY n DESC" % ch_where, ch_params,
     ).fetchall()
 
     channel_list = [(r["v"], r["n"]) for r in channels]
     untracked = conn.execute(
-        "SELECT COUNT(*) FROM applicants a WHERE a.program=?"
-        " AND NOT EXISTS (SELECT 1 FROM pings p WHERE p.applicant_id = a.id)",
-        (program.key,)).fetchone()[0]
+        "SELECT COUNT(*) FROM applicants WHERE %s"
+        " AND NOT EXISTS (SELECT 1 FROM pings p WHERE p.applicant_id = applicants.id)"
+        % ch_where, ch_params).fetchone()[0]
     if untracked:
         channel_list.append((NONE_TOKEN, untracked))
 
@@ -298,16 +343,16 @@ def facet_values(conn, program):
     ).fetchone()
 
     return {
-        "terms": col("term", alpha=True),
-        "regions": col("region"),
-        "countries": col("country"),
-        "emphases": col("emphasis"),
+        "terms": col("term", "term", alpha=True),
+        "regions": col("region", "region"),
+        "countries": col("country", "country"),
+        "emphases": col("emphasis", "emphasis"),
         # Blank is the overwhelming majority for both (nobody outside the BFA
         # has a pathway), and a "(none)" bucket holding 97% of the data is a
         # filter nobody wants. `blank=False` drops it, so these two dimensions
         # offer only the real values.
-        "degrees": col("degree", alpha=True, blank=False),
-        "pathways": col("bfa_pathway", alpha=True, blank=False),
+        "degrees": col("degree", "degree", alpha=True, blank=False),
+        "pathways": col("bfa_pathway", "pathway", alpha=True, blank=False),
         "channels": channel_list,
         "age_bands": AGE_BANDS,
         "date_fields": program.date_fields,

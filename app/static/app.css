@@ -158,8 +158,7 @@ html{color-scheme:light}
 body{
   margin:0;background:var(--plane);color:var(--ink);
   font:400 14px/1.55 var(--f-ui);
-  -webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;
-}
+  -webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;}
 /* Faint grain so the plane reads as paper rather than flat #fff */
 body::before{
   content:"";position:fixed;inset:0;pointer-events:none;z-index:0;opacity:.5;
@@ -533,8 +532,14 @@ select[multiple] option:checked{background:var(--accent);color:var(--accent-fg)}
 .tip-pop p{margin:0 0 8px}
 .tip-pop p:last-child{margin:0}
 .tip-pop b{color:inherit;font-weight:640}
-/* A tip near the right edge opens leftward so it cannot run off-screen. */
-.grid2 section:last-child .tip .tip-pop{left:auto;right:-6px}
+/* A tip near the right edge opens leftward so it cannot run off-screen.
+   `.flip` is set per-tip by app.js, which measures the popover against the
+   viewport on hover -- the old structural guess (`.grid2 section:last-child`)
+   only covered one of the places a tip can sit near the right edge, and the
+   others silently widened the PAGE, because an absolutely-positioned box still
+   counts toward scrollable overflow while hidden. */
+.grid2 section:last-child .tip .tip-pop,
+.tip-pop.flip{left:auto;right:-6px}
 
 /* Select all / Clear all read as actions, not as another option chip. */
 .tabsm a.pickall{border-style:dashed;color:var(--ink-3);font-weight:600}
@@ -686,3 +691,14 @@ code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11.5px;
 @keyframes spin{to{transform:rotate(360deg)}}
 @media (prefers-reduced-motion:reduce){.spinner{animation-duration:2.4s}}
 .btn[disabled]{opacity:.55;cursor:progress}
+
+/* Per-degree counts under each overall-funnel step (AOS vs BFA). Deliberately
+   plain text rather than a second set of rails: the two programmes differ by
+   ~25x, so any shared scale renders the smaller one as a sliver. */
+.step-split{grid-column:1/-1;display:flex;gap:8px;flex-wrap:wrap;
+  margin:2px 0 0;padding-left:26px}
+.chip-split{font:500 10.5px/1.5 var(--f-ui);color:var(--ink-3);
+  background:var(--surface-2);border:1px solid var(--ring);border-radius:999px;
+  padding:1px 8px;white-space:nowrap}
+.chip-split b{color:var(--ink-2);font-weight:640}
+.chip-split .muted{color:var(--ink-3);opacity:.75;margin-left:4px}

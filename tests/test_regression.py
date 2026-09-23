@@ -1836,3 +1836,76 @@ def test_started_is_offered_on_both_channel_cards(tmp_path, monkeypatch):
     # fell back to its default stage.
     assert body.count('data-stage="started"') == 2
     assert "Which channels" in body
+
+
+def test_emphasis_spellings_collapse_onto_one_programme():
+    """Slate ships the same programme under two word orders."""
+    canon = "Acting for Film, Television & Theatre"
+    assert programs.canonical_emphasis("Acting for Theatre, Film, and Television") == canon
+    assert programs.canonical_emphasis(canon) == canon
+    # The degree prefix survives, so one alias entry covers AOS and BFA both.
+    assert programs.canonical_emphasis(
+        "BFA - Acting for Theatre, Film, and Television") == "BFA - " + canon
+    # Unknown spellings are left exactly as they arrived.
+    assert programs.canonical_emphasis("Acting for Musical Theatre") == \
+        "Acting for Musical Theatre"
+    assert programs.canonical_emphasis("") == ""
+
+
+def test_stored_rows_migrate_onto_the_canonical_emphasis():
+    conn = db.connect(":memory:")
+    conn.execute("INSERT INTO applicants (program, global_id, emphasis)"
+                 " VALUES ('ft','g1','Acting for Theatre, Film, and Television')")
+    conn.execute("INSERT INTO applicants (program, global_id, emphasis)"
+                 " VALUES ('ft','g2','Acting for Film, Television & Theatre')")
+    conn.commit()
+    db._migrate_emphasis(conn)
+    got = {r[0] for r in conn.execute("SELECT DISTINCT emphasis FROM applicants")}
+    assert got == {"Acting for Film, Television & Theatre"}
+    conn.close()
+
+
+def test_facet_counts_follow_the_other_active_filters(ft_db):
+    """Picking a date range must narrow what the other pickers report.
+
+    And a dimension must NOT narrow itself, or every value the user has not
+    ticked reads 0 and the selection can never be widened again.
+    """
+    conn, prog = ft_db, programs.get("ft")
+
+    unfiltered = filters.facet_values(conn, prog)
+    all_terms = dict(unfiltered["terms"])
+
+    # Narrow on one term; every OTHER dimension should shrink with it.
+    one = max(all_terms, key=lambda k: all_terms[k])
+    flt = filters.Filters(prog, terms=[one])
+    scoped = filters.facet_values(conn, prog, flt)
+
+    in_scope = conn.execute(
+        "SELECT COUNT(*) FROM applicants WHERE " + flt.where, flt.params).fetchone()[0]
+    assert sum(n for _v, n in scoped["regions"]) <= in_scope
+    assert sum(n for _v, n in scoped["emphases"]) == in_scope
+    assert sum(n for _v, n in unfiltered["emphases"]) > in_scope
+
+    # Term itself is counted with its OWN filter removed, so the full option
+    # list survives and the user can still add a second term.
+    assert dict(scoped["terms"]) == all_terms
+
+
+def test_funnel_by_degree_splits_and_skips_blanks(ft_db):
+    conn, prog = ft_db, programs.get("ft")
+    flt = filters.Filters(prog)
+    apps, flags = metrics.load_population(conn, prog, flt.where, flt.params)
+    split = metrics.funnel_by(prog, apps, flags, "degree",
+                              order=[programs.AOS, programs.BFA])
+
+    overall = metrics.overall_funnel(prog, flags)
+    blank = sum(1 for a in apps if not (a["degree"] or "").strip())
+
+    assert [g["name"] for g in split] == [programs.AOS]  # sample file predates the BFA
+    # Groups + the skipped blanks must account for everyone, and each group's
+    # stages must nest inside the headline.
+    assert sum(g["population"] for g in split) + blank == overall["population"]
+    for g in split:
+        for k in prog.stage_keys:
+            assert g["counts"][k] <= overall["counts"][k]

@@ -296,7 +296,10 @@ def ingest(conn, path_or_stream, program_key, filename, sha256=None):
             "city": _s(row[cols["city"]]) if "city" in cols else "",
             "postal": _s(row[cols["postal"]]) if "postal" in cols else "",
             "age": _age(row[cols["age"]]) if "age" in cols else None,
-            "emphasis": _s(row[cols["emphasis"]]) if "emphasis" in cols else "",
+            # Collapsed onto one spelling per programme -- see
+            # programs.canonical_emphasis.
+            "emphasis": (programs.canonical_emphasis(row[cols["emphasis"]])
+                         if "emphasis" in cols else ""),
             "bfa_pathway": _s(row[cols["bfa_pathway"]]) if "bfa_pathway" in cols else "",
             "decision": _s(row[cols["decision"]]) if "decision" in cols else "",
             "app_status": _s(row[cols["app_status"]]) if "app_status" in cols else "",

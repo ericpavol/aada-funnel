@@ -26,6 +26,7 @@ def load_population(conn, program, where_sql, params):
     """
     sql = (
         "SELECT id, global_id, term, region, country, city, age, emphasis, decision,"
+        " degree, bfa_pathway,"
         " started_date, submitted_date, completed_date,"
         " st_started, st_submitted, st_aud_req, st_aud_comp, st_admitted,"
         " st_accepted, st_enrolled"
@@ -80,6 +81,31 @@ def overall_funnel(program, flags):
         })
         prev = n
     return {"population": total, "counts": counts, "steps": steps}
+
+
+def funnel_by(program, applicants, flags, column, order=None):
+    """The overall funnel, computed separately per value of `column`.
+
+    Used to show AOS and BFA side by side under the headline funnel. Rows with
+    a blank value are skipped rather than pooled into an "(unknown)" group: the
+    point of the split is to compare two named programmes, and a third bar made
+    of "we don't know" would invite reading it as a third programme.
+
+    Because blanks are dropped, the groups do NOT necessarily sum to the
+    headline total -- which is correct, and why the headline stays separate.
+    """
+    groups = {}
+    for row, flag in zip(applicants, flags):
+        key = (row[column] or "").strip()
+        if not key:
+            continue
+        groups.setdefault(key, []).append(flag)
+    names = [g for g in (order or []) if g in groups]
+    names += sorted(g for g in groups if g not in names)
+    return [{"name": g,
+             "population": len(groups[g]),
+             "counts": overall_funnel(program, groups[g])["counts"]}
+            for g in names]
 
 
 def build_matrix(program, applicants, flags, pings_by_app, touch="any"):

@@ -111,6 +111,43 @@ def degree_of(emphasis):
     return BFA if e.lower().startswith(_BFA_PREFIX) else AOS
 
 
+# One programme, two spellings. Slate's Full-Time export carries both
+# "Acting for Film, Television & Theatre" and "Acting for Theatre, Film, and
+# Television" -- same programme, words reordered -- which split one option into
+# two in every filter and chart.
+#
+# Deliberately an explicit alias map rather than a fuzzy word-set match. Only a
+# handful of spellings exist, and a fingerprint that ignores word order would
+# happily merge two programmes that genuinely differ only by order. Add a line
+# here when Slate invents another spelling; never widen this into a heuristic.
+#
+# Canonical form is the spelling the current export uses.
+_EMPHASIS_ALIASES = {
+    "acting for theatre, film, and television": "Acting for Film, Television & Theatre",
+}
+
+# Kept out of the alias key so one entry covers both the AOS and BFA spellings
+# of the same programme.
+_DEGREE_PREFIX_RE = re.compile(r"^\s*(BFA)\s*-\s*", re.I)
+
+
+def canonical_emphasis(emphasis):
+    """Collapse alternate spellings of one programme onto a single label.
+
+    Any degree prefix is split off first and re-attached afterwards, so
+    "BFA - Acting for Theatre, Film, and Television" normalises its programme
+    without losing the BFA. Anything with no known alias is returned untouched.
+    """
+    e = _s(emphasis)
+    if not e:
+        return e
+    m = _DEGREE_PREFIX_RE.match(e)
+    prefix, rest = ("", e)
+    if m:
+        prefix, rest = ("%s - " % m.group(1).upper(), e[m.end():].strip())
+    return prefix + _EMPHASIS_ALIASES.get(rest.lower(), rest)
+
+
 class Layout:
     """One known column arrangement of a Slate export.
 

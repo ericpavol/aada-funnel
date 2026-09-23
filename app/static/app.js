@@ -159,11 +159,14 @@
       ctx.textBaseline = "middle";
       var skip = opts.skip || [];
       var fmt = opts.fmt || pctFmt;
+      // `text` wins when supplied: some charts put the count beside the
+      // percentage, which fmt(value) alone cannot express.
+      var text = opts.text || null;
       meta.data.forEach(function (bar, i) {
         if (skip[i]) return;
         var v = chart.data.datasets[0].data[i];
         ctx.textAlign = "left";
-        ctx.fillText(fmt(v), bar.x + 8, bar.y);
+        ctx.fillText(text ? text[i] : fmt(v), bar.x + 8, bar.y);
       });
       ctx.restore();
     }
@@ -510,12 +513,18 @@
         options: {
           indexAxis: "y",
           maintainAspectRatio: false,
-          layout: { padding: { right: 52, top: opts.baseline == null ? 6 : 14 } },
+          layout: {
+            padding: {
+              right: opts.endLabel ? 104 : 52,
+              top: opts.baseline == null ? 6 : 14
+            }
+          },
           plugins: {
             legend: { display: false },
             endLabels: {
               color: t.ink2,
               fmt: opts.money ? money : pctFmt,
+              text: opts.endLabel ? flat.map(opts.endLabel) : null,
               skip: flat.map(function (f) { return !!f.muted; })
             },
             tooltip: {
@@ -621,6 +630,12 @@
       seriesLabel: "share of " + finalLabel,
       value: function (r) { return r.share; },
       baseline: null,
+      // Share AND headcount on the bar. The percentage alone kept sending
+      // people to the tooltip for the number they actually wanted.
+      endLabel: function (f) {
+        if (f.muted || !f.row) return "";
+        return (f.value * 100).toFixed(1) + "%  " + numFmt(f.row.final_n);
+      },
       tooltip: function (r) {
         var out = [
           (r.share * 100).toFixed(1) + "% of " + finalLabel,
@@ -1639,10 +1654,53 @@
   }
 
   /* ------------------------------------------------------------------ wire up */
+  /* A tip popover is 430px wide and opens rightward from a 17px icon, so any
+   * tip in the right third of the page ran past the viewport. An absolutely
+   * positioned box still counts toward scrollable overflow even while hidden,
+   * which is what put a horizontal scrollbar and a band of dead space on the
+   * right of every page.
+   *
+   * Clipping was tried first and does not work: an overflow value on `html` or
+   * `body` PROPAGATES to the viewport and leaves the element itself `visible`,
+   * so neither clips its own children. The popovers have to actually fit.
+   *
+   * So they are measured and flipped up front, not just on hover -- a popover
+   * that only repositions on pointerenter has already widened the page by then.
+   * Re-run on resize and on hover because the page reflows: cards expand, the
+   * window changes, and a tip that fitted at 1400px does not at 1024px.
+   */
+  function wireTipFlip() {
+    var tips = [].slice.call(document.querySelectorAll(".tip"));
+    if (!tips.length) return;
+
+    function place(tip) {
+      var pop = tip.querySelector(".tip-pop");
+      if (!pop) return;
+      pop.classList.remove("flip");
+      var room = document.documentElement.clientWidth;
+      if (pop.getBoundingClientRect().right > room - 8) pop.classList.add("flip");
+    }
+
+    function placeAll() { tips.forEach(place); }
+
+    placeAll();
+    tips.forEach(function (tip) {
+      tip.addEventListener("pointerenter", function () { place(tip); });
+      tip.addEventListener("focusin", function () { place(tip); });
+    });
+
+    var t = null;
+    window.addEventListener("resize", function () {
+      clearTimeout(t);
+      t = setTimeout(placeAll, 120);
+    });
+  }
+
   function init() {
     syncThemeButton();
     syncSwatches();   // reflect the accent stamped by the inline <head> script
     wireStickyOffset();
+    wireTipFlip();
     wireFolds();
     wireScrollMemory();
 
