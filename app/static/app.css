@@ -710,6 +710,11 @@ code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11.5px;
    Segments share one base (everyone who started), so together they are exactly
    as long as the unstacked bar and still match the total printed beside them.
 
+   FLAT fills, no gradient. The unstacked rail fades dark->light across its
+   width, and reusing that here put a fade INSIDE the first segment, so a
+   two-colour bar read as three or four sections and the real AOS/BFA boundary
+   was the one you could not find.
+
    BFA is the accent mixed toward ink rather than a fixed second hue: the accent
    is user-switchable across seven colours, and any fixed partner would collide
    with one of them. Light-vs-dark of the same hue survives all seven, and it is
@@ -719,9 +724,27 @@ code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11.5px;
   animation:grow .7s cubic-bezier(.2,.7,.2,1) backwards;transform-origin:left}
 .rail.split i:first-child{border-radius:var(--r-pill) 0 0 var(--r-pill)}
 .rail.split i:last-child{border-radius:0 var(--r-pill) var(--r-pill) 0}
-.seg-0{background:linear-gradient(90deg,
-  color-mix(in oklab,var(--accent) 78%,var(--accent-strong)),var(--accent))}
-.seg-1{background:color-mix(in oklab,var(--accent) 38%,var(--ink))}
-/* "No degree recorded" -- deliberately inert grey. It is missing data, not a
-   third programme, and should not read as one. */
-.seg-u{background:var(--surface-3)}
+/* `.rail.split i` rather than a bare `.seg-N`: the unstacked `.rail i` rule is
+   (0,1,1) and a lone class is (0,1,0), so it OUT-RANKED these and every segment
+   kept painting the base gradient -- which is what made a two-colour bar read
+   as several faded sections. */
+.rail.split i.seg-0{background:var(--accent)}
+/* BFA: the accent pushed toward --accent-fg.
+   --accent-fg is the colour already chosen to contrast with each accent -- dark
+   behind a light accent, light behind a dark one -- so mixing toward it always
+   moves AWAY from the accent's own lightness. That branch is the whole point.
+   Mixing toward --ink was tried and only worked for lime: six of the seven
+   accents are already dark in light mode, so darkening them again produced the
+   same colour twice (measured gap 0.00-0.12). This holds for all seven in both
+   themes, because --accent-fg is itself theme-aware. */
+.rail.split i.seg-1{background:color-mix(in oklab,var(--accent) 42%,var(--accent-fg))}
+/* "No degree recorded" -- pitched to sit just above the empty track so the bar
+   still spans the stage's real total, while reading as absent data rather than
+   as a third programme. Two colours carry meaning here; this one carries none
+   on purpose. */
+.rail.split i.seg-u{background:color-mix(in oklab,var(--ink) 9%,var(--surface-2))}
+
+/* Chip dots reuse the rail's two greens as the key. Declared separately from
+   the rail because they are not inside `.rail.split`. */
+.chip-split i.seg-0{background:var(--accent)}
+.chip-split i.seg-1{background:color-mix(in oklab,var(--accent) 42%,var(--accent-fg))}

@@ -200,11 +200,30 @@ The grey segment is not optional: ~21% of Full-Time rows have a blank emphasis,
 so AOS + BFA alone would leave every bar visibly short of its own total. It is
 inert grey on purpose — missing data, not a third programme.
 
-BFA is the accent colour mixed toward ink rather than a fixed second hue. The
-accent is user-switchable across seven colours and any fixed partner collides
-with one of them; light-vs-dark of one hue survives all seven, and it is the
-convention the bar charts already use for a sub-source. The colour dot on each
-chip below the rail doubles as the key, so there is no separate legend.
+The segments are FLAT fills. The unstacked rail fades dark->light across its
+width, and inheriting that put a gradient *inside* the first segment, so a
+two-colour bar read as three or four faded sections and the real AOS/BFA
+boundary was the one you could not find. Two traps here, both hit once:
+
+* `.rail i` is specificity (0,1,1) and a bare `.seg-N` class is (0,1,0), so the
+  base gradient silently **out-ranked** the flat colours. The segment rules are
+  written `.rail.split i.seg-N` for that reason — don't shorten them.
+* BFA is `color-mix(var(--accent) 42%, var(--accent-fg))`. Mixing toward
+  `--ink` was tried first and only worked for lime: six of the seven accents are
+  already dark in light mode, so darkening them again produced the same colour
+  twice (measured lightness gap 0.00–0.12). `--accent-fg` is the token already
+  chosen to contrast with each accent — dark behind a light accent, light behind
+  a dark one — so mixing toward it always moves *away* from the accent's own
+  lightness, and it is theme-aware for free. Measured across all seven accents
+  in both themes: worst AOS-vs-BFA gap 0.20, typical 0.3–0.5.
+
+Known soft spot: with the **indigo** accent in dark mode the BFA segment sits
+close in lightness to the grey remainder (gap 0.05). They differ in chroma so
+they are still tellable apart, and lime (the default) is clear in both themes.
+Worth revisiting only if someone actually works in indigo dark.
+
+The colour dot on each chip below the rail doubles as the key, so there is no
+separate legend.
 
 ### Tip popovers are positioned in JS, not guessed in CSS
 A `.tip-pop` is 430px wide and absolutely positioned, and an absolutely
