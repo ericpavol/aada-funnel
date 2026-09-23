@@ -360,18 +360,19 @@ def overview(request: Request):
         getall = getattr(q, "getlist", None) or (lambda k: q.getall(k))
 
         # Which funnel stage the two channel charts are measured against.
-        # "started" is not offered: every applicant has started, so within-channel
-        # conversion to it is 100% for every row and the quality chart goes flat
-        # — the same reason the funnel table omits its Started columns.
         # Each channel card picks its own target stage, independently. NB the
         # params are `cvs`/`mvs`, not `stage`: `stage` is already taken by the
         # applicant filter's "Reached stage". Reusing it silently narrowed the
         # population to the people who had reached that stage, which made every
         # channel convert at 100%.
-        # "started" is not offered: every applicant has started, so within-channel
-        # conversion to it is 100% for every row and the quality chart goes flat
-        # — the same reason the funnel table omits its Started columns.
-        stage_opts = [k for k in program.stage_keys if k != "started"]
+        #
+        # "started" WAS withheld here, and is now offered on both cards at
+        # Eric's request. It is genuinely useful on "which channels make up" —
+        # the share of everyone who started that each channel touched — but on
+        # "which channels convert" it is degenerate by construction: every
+        # applicant row has started = True, so the rate is 100% for every
+        # channel and the chart draws flat. That is expected output, not a bug.
+        stage_opts = list(program.stage_keys)
 
         def _stage(param):
             v = q.get(param)

@@ -12,6 +12,7 @@ NONE_TOKEN = "__none__"
 NONE_LABELS = {
     "term": "(no term)", "region": "(no region)", "country": "(no country)",
     "emphasis": "(no programme)", "channel": "(no UTM \u2014 untracked)",
+    "degree": "(no degree)", "pathway": "(not a BFA applicant)",
 }
 
 AGE_BANDS = [
@@ -67,12 +68,15 @@ class Filters:
 
     def __init__(self, program, terms=None, regions=None, countries=None,
                  emphases=None, age_bands=None, date_field=None,
-                 date_from=None, date_to=None, channels=None, stage=None):
+                 date_from=None, date_to=None, channels=None, stage=None,
+                 degrees=None, pathways=None):
         self.program = program
         self.terms = [t for t in (terms or []) if t]
         self.regions = [r for r in (regions or []) if r]
         self.countries = [c for c in (countries or []) if c]
         self.emphases = [e for e in (emphases or []) if e]
+        self.degrees = [d for d in (degrees or []) if d]
+        self.pathways = [p for p in (pathways or []) if p]
         self.age_bands = [a for a in (age_bands or []) if a in _BANDS]
         self.date_field = date_field if date_field in program.date_fields else None
         self.date_from = (date_from or "").strip()
@@ -104,6 +108,10 @@ class Filters:
             inlist("country", self.countries)
         if self.emphases:
             inlist("emphasis", self.emphases)
+        if self.degrees:
+            inlist("degree", self.degrees)
+        if self.pathways:
+            inlist("bfa_pathway", self.pathways)
 
         if self.age_bands:
             parts = []
@@ -156,6 +164,7 @@ class Filters:
     @property
     def active(self):
         return bool(self.terms or self.regions or self.countries or self.emphases
+                    or self.degrees or self.pathways
                     or self.age_bands or self.channels or self.stage
                     or (self.date_field and (self.date_from or self.date_to)))
 
@@ -169,6 +178,10 @@ class Filters:
             bits.append("Country: " + ", ".join(_disp("country", self.countries)))
         if self.emphases:
             bits.append("Program: " + ", ".join(_disp("emphasis", self.emphases)))
+        if self.degrees:
+            bits.append("Degree: " + ", ".join(_disp("degree", self.degrees)))
+        if self.pathways:
+            bits.append("BFA pathway: " + ", ".join(_disp("pathway", self.pathways)))
         if self.age_bands:
             bits.append("Age: " + ", ".join(_BANDS[a][1] for a in self.age_bands))
         if self.date_field and (self.date_from or self.date_to):
@@ -200,6 +213,8 @@ class Filters:
         add("region", "Region", _disp("region", self.regions))
         add("country", "Country", _disp("country", self.countries))
         add("emphasis", "Program", _disp("emphasis", self.emphases))
+        add("degree", "Degree", _disp("degree", self.degrees))
+        add("pathway", "BFA pathway", _disp("pathway", self.pathways))
         add("channel", "Channel", _disp("channel", self.channels))
         add("age", "Age", [_BANDS[a][1] for a in self.age_bands])
         if self.date_field and (self.date_from or self.date_to):
@@ -217,6 +232,7 @@ class Filters:
         d = {"program": self.program.key}
         for name, vals in (("term", self.terms), ("region", self.regions),
                            ("country", self.countries), ("emphasis", self.emphases),
+                           ("degree", self.degrees), ("pathway", self.pathways),
                            ("age", self.age_bands), ("channel", self.channels)):
             if vals:
                 d[name] = list(vals)
@@ -233,7 +249,7 @@ class Filters:
 
 def facet_values(conn, program):
     """Distinct filter options actually present in the data, for the filter bar."""
-    def col(name, alpha=False):
+    def col(name, alpha=False, blank=True):
         """Distinct values for one column, plus a "(no value)" bucket.
 
         `alpha` sorts A-Z instead of by volume. Term uses it: there are only a
@@ -252,13 +268,13 @@ def facet_values(conn, program):
             out.sort(key=lambda kv: str(kv[0]).lower())
         else:
             out.sort(key=lambda kv: (-kv[1], str(kv[0])))
-        blank = conn.execute(
+        n_blank = blank and conn.execute(
             "SELECT COUNT(*) FROM applicants WHERE program=? AND %s=''" % name,
             (program.key,)).fetchone()[0]
-        if blank:
+        if n_blank:
             # Always last: it is a catch-all, not a value, so it should not sit
             # in the middle of an A-Z run or above real terms in a ranked one.
-            out.append((NONE_TOKEN, blank))
+            out.append((NONE_TOKEN, n_blank))
         return out
 
     channels = conn.execute(
@@ -286,6 +302,12 @@ def facet_values(conn, program):
         "regions": col("region"),
         "countries": col("country"),
         "emphases": col("emphasis"),
+        # Blank is the overwhelming majority for both (nobody outside the BFA
+        # has a pathway), and a "(none)" bucket holding 97% of the data is a
+        # filter nobody wants. `blank=False` drops it, so these two dimensions
+        # offer only the real values.
+        "degrees": col("degree", alpha=True, blank=False),
+        "pathways": col("bfa_pathway", alpha=True, blank=False),
         "channels": channel_list,
         "age_bands": AGE_BANDS,
         "date_fields": program.date_fields,
@@ -298,6 +320,7 @@ def facet_values(conn, program):
 DIMENSION_PARAMS = {
     "term": ["term"], "region": ["region"], "country": ["country"],
     "emphasis": ["emphasis"], "channel": ["channel"], "age": ["age"],
+    "degree": ["degree"], "pathway": ["pathway"],
     "stage": ["stage"], "date": ["date_field", "date_from", "date_to"],
 }
 
@@ -339,7 +362,28 @@ def describe(program, facets, flt):
         dims.insert(2, {"key": "country", "label": "Country", "param": "country",
                         "type": "multi", "values": vals(facets["countries"], "country"),
                         "selected": flt.countries})
+    # Offered only where the data has them, the same way Country is. Summer's
+    # emphasis column carries an unrelated vocabulary and never yields a
+    # degree, so these two simply do not appear on that program.
+    extra = []
+    if facets["degrees"]:
+        extra.append({"key": "degree", "label": "Degree (AOS/BFA)", "param": "degree",
+                      "type": "multi", "values": vals(facets["degrees"], "degree"),
+                      "selected": flt.degrees})
+    if facets["pathways"]:
+        extra.append({"key": "pathway", "label": "BFA pathway", "param": "pathway",
+                      "type": "multi", "values": vals(facets["pathways"], "pathway"),
+                      "selected": flt.pathways})
+    for i, dim in enumerate(extra):
+        dims.insert(_index_of(dims, "emphasis") + 1 + i, dim)
     return {"dimensions": dims, "program": program.key}
+
+
+def _index_of(dims, key):
+    for i, d in enumerate(dims):
+        if d["key"] == key:
+            return i
+    return len(dims) - 1
 
 
 def from_query(program, params, default_fy=None):
@@ -379,6 +423,7 @@ def from_query(program, params, default_fy=None):
         program,
         terms=getall("term"), regions=getall("region"),
         countries=getall("country"), emphases=getall("emphasis"),
+        degrees=getall("degree"), pathways=getall("pathway"),
         age_bands=getall("age"), channels=getall("channel"),
         date_field=field, date_from=lo, date_to=hi,
         stage=params.get("stage"),

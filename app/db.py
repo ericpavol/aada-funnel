@@ -59,6 +59,10 @@ CREATE TABLE IF NOT EXISTS applicants (
     postal          TEXT NOT NULL DEFAULT '',
     age             INTEGER,
     emphasis        TEXT NOT NULL DEFAULT '',
+    -- 'AOS' / 'BFA', derived from emphasis at ingest (Full-Time only).
+    degree          TEXT NOT NULL DEFAULT '',
+    -- '3-year' / '4-year', blank for everyone who is not a BFA applicant.
+    bfa_pathway     TEXT NOT NULL DEFAULT '',
     decision        TEXT NOT NULL DEFAULT '',
     app_status      TEXT NOT NULL DEFAULT '',
     started_date    TEXT NOT NULL DEFAULT '',
@@ -211,6 +215,8 @@ def connect(path=None):
 # the old shape and every insert would fail on the unknown column.
 _ADDED_COLUMNS = [
     ("applicants", "st_enrolled", "INTEGER NOT NULL DEFAULT 0"),
+    ("applicants", "degree", "TEXT NOT NULL DEFAULT ''"),
+    ("applicants", "bfa_pathway", "TEXT NOT NULL DEFAULT ''"),
 ]
 
 
@@ -220,7 +226,29 @@ def _migrate(conn):
         if col not in have:
             conn.execute("ALTER TABLE %s ADD COLUMN %s %s" % (table, col, decl))
     _migrate_terms(conn)
+    _backfill_degree(conn)
     conn.commit()
+
+
+def _backfill_degree(conn):
+    """Derive `degree` for rows ingested before the column existed.
+
+    Degree is a pure function of emphasis, which is already stored, so old rows
+    can be filled in without re-uploading anything. Only touches rows that have
+    an emphasis but no degree, so it costs nothing once it has run and it never
+    overwrites a value ingest wrote.
+    """
+    from . import programs
+    rows = conn.execute(
+        "SELECT DISTINCT program, emphasis FROM applicants"
+        " WHERE emphasis <> '' AND degree = ''").fetchall()
+    for r in rows:
+        prog = programs.PROGRAMS.get(r["program"])
+        if prog is None or not prog.has_degree:
+            continue
+        conn.execute(
+            "UPDATE applicants SET degree=? WHERE program=? AND emphasis=? AND degree=''",
+            (programs.degree_of(r["emphasis"]), r["program"], r["emphasis"]))
 
 
 def _migrate_terms(conn):

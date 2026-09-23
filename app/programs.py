@@ -86,6 +86,31 @@ def canonical_term(term):
     return t
 
 
+# AADA added a BFA alongside the existing AOS in the 2026-09 export. Slate does
+# not send the degree as its own column: it prefixes the emphasis string
+# instead, so "BFA - Acting for Film, Television & Theatre" is the BFA, while
+# the unprefixed "Acting for Film, Television & Theatre" is AOS only. The two
+# are DIFFERENT degrees, not one emphasis under two labels, so the emphasis
+# value is stored exactly as Slate sends it and the degree is derived alongside
+# it rather than parsed out of it.
+AOS = "AOS"
+BFA = "BFA"
+_BFA_PREFIX = "bfa"
+
+
+def degree_of(emphasis):
+    """Degree implied by an emphasis string -> 'BFA', 'AOS', or '' if unknown.
+
+    Only meaningful for Full-Time: Summer's emphasis column carries an
+    unrelated vocabulary ("Focused Intensives-Musical Theatre"), which is why
+    Program.has_degree gates this rather than it being applied everywhere.
+    """
+    e = _s(emphasis)
+    if not e:
+        return ""
+    return BFA if e.lower().startswith(_BFA_PREFIX) else AOS
+
+
 class Layout:
     """One known column arrangement of a Slate export.
 
@@ -122,9 +147,13 @@ class Layout:
 
 class Program:
     def __init__(self, key, label, layouts, stage_keys, stage_labels, stage_fn,
-                 date_fields, extra_stages=None, channel_stage=None):
+                 date_fields, extra_stages=None, channel_stage=None,
+                 has_degree=False):
         self.key = key
         self.label = label
+        # Whether this program's emphasis column encodes an AOS/BFA degree.
+        # Full-Time only -- see degree_of().
+        self.has_degree = has_degree
         self.layouts = layouts          # newest arrangement first
         self.stage_keys = stage_keys    # ordered funnel stages
         self.stage_labels = stage_labels
@@ -175,6 +204,30 @@ class Program:
         return None, bad
 
 
+# Full-Time, as exported from 2026-09-23 on: "Application BFA Pathway" appended
+# at 21, holding "3-year"/"4-year" for BFA applicants and blank for everyone
+# else. Appended, not inserted, so FT_2026_08's anchors still match this file —
+# which is exactly why this layout has to be FIRST in Program.layouts. Without
+# it the newer file would resolve to the older layout, ingest cleanly, and
+# silently drop the pathway.
+FT_2026_09 = Layout(
+    name="2026-09 (with BFA Pathway)",
+    utm_idx=(15, 16, 17, 18),
+    cols={
+        "global_id": 0, "term": 1,
+        "started_date": 2, "submitted_date": 3, "completed_date": 4,
+        "aud_requested": 5, "aud_pending": 6, "aud_complete": 7, "admitted": 8,
+        "decision": 9,
+        "country": 10, "region": 11, "city": 12, "postal": 13, "age": 14,
+        "referral_info": 19, "emphasis": 20, "bfa_pathway": 21,
+    },
+    anchors={
+        0: "global id", 1: "term", 2: "started", 8: "admitted",
+        15: "utm source", 16: "utm medium", 17: "utm campaign", 18: "utm content",
+        19: "referral", 20: "emphasis", 21: "bfa pathway",
+    },
+)
+
 # Full-Time, as exported from 2026-08-03 on: "Referral Info" inserted at 19.
 FT_2026_08 = Layout(
     name="2026-08 (with Referral Info)",
@@ -216,8 +269,9 @@ FT_2026_07 = Layout(
 
 FT = Program(
     key="ft",
-    label="Full-Time (2 Year)",
-    layouts=[FT_2026_08, FT_2026_07],
+    label="Full-Time",
+    layouts=[FT_2026_09, FT_2026_08, FT_2026_07],
+    has_degree=True,
     stage_keys=["started", "submitted", "aud_req", "aud_comp", "admitted",
                 "enrolled"],
     stage_labels={

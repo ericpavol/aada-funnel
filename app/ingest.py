@@ -297,12 +297,17 @@ def ingest(conn, path_or_stream, program_key, filename, sha256=None):
             "postal": _s(row[cols["postal"]]) if "postal" in cols else "",
             "age": _age(row[cols["age"]]) if "age" in cols else None,
             "emphasis": _s(row[cols["emphasis"]]) if "emphasis" in cols else "",
+            "bfa_pathway": _s(row[cols["bfa_pathway"]]) if "bfa_pathway" in cols else "",
             "decision": _s(row[cols["decision"]]) if "decision" in cols else "",
             "app_status": _s(row[cols["app_status"]]) if "app_status" in cols else "",
             "started_date": _iso(row[cols["started_date"]]) if "started_date" in cols else "",
             "submitted_date": _iso(row[cols["submitted_date"]]) if "submitted_date" in cols else "",
             "completed_date": _iso(row[cols["completed_date"]]) if "completed_date" in cols else "",
         }
+        # Slate sends no degree column -- it prefixes the emphasis string. See
+        # programs.degree_of.
+        fields["degree"] = (programs.degree_of(fields["emphasis"])
+                            if program.has_degree else "")
 
         # Dedup identity: (global_id, term, started_date) + an occurrence
         # ordinal. Term and start date never change once an application exists,
@@ -320,15 +325,17 @@ def ingest(conn, path_or_stream, program_key, filename, sha256=None):
         if existing is None:
             cur.execute(
                 "INSERT INTO applicants (program, global_id, term, country, region, city,"
-                " postal, age, emphasis, decision, app_status, started_date,"
+                " postal, age, emphasis, degree, bfa_pathway, decision, app_status,"
+                " started_date,"
                 " submitted_date, completed_date, st_started, st_submitted, st_aud_req,"
                 " st_aud_comp, st_admitted, st_accepted, st_enrolled, dedup_seq,"
                 " first_upload_id,"
                 " last_upload_id)"
-                " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                 (program_key, global_id, fields["term"], fields["country"],
                  fields["region"], fields["city"], fields["postal"], fields["age"],
-                 fields["emphasis"], fields["decision"], fields["app_status"],
+                 fields["emphasis"], fields["degree"], fields["bfa_pathway"],
+                 fields["decision"], fields["app_status"],
                  fields["started_date"], fields["submitted_date"],
                  fields["completed_date"],
                  stage_vals["st_started"], stage_vals["st_submitted"],
@@ -352,6 +359,8 @@ def ingest(conn, path_or_stream, program_key, filename, sha256=None):
                 "  postal=CASE WHEN ?<>'' THEN ? ELSE postal END,"
                 "  age=COALESCE(?, age),"
                 "  emphasis=CASE WHEN ?<>'' THEN ? ELSE emphasis END,"
+                "  degree=CASE WHEN ?<>'' THEN ? ELSE degree END,"
+                "  bfa_pathway=CASE WHEN ?<>'' THEN ? ELSE bfa_pathway END,"
                 "  decision=CASE WHEN ?<>'' THEN ? ELSE decision END,"
                 "  app_status=CASE WHEN ?<>'' THEN ? ELSE app_status END,"
                 "  started_date=CASE WHEN ?<>'' THEN ? ELSE started_date END,"
@@ -367,6 +376,8 @@ def ingest(conn, path_or_stream, program_key, filename, sha256=None):
                  fields["region"], fields["region"], fields["city"], fields["city"],
                  fields["postal"], fields["postal"], fields["age"],
                  fields["emphasis"], fields["emphasis"],
+                 fields["degree"], fields["degree"],
+                 fields["bfa_pathway"], fields["bfa_pathway"],
                  fields["decision"], fields["decision"],
                  fields["app_status"], fields["app_status"],
                  fields["started_date"], fields["started_date"],

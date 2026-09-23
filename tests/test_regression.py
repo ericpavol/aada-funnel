@@ -1700,3 +1700,139 @@ def test_post_submission_touches_measure_only_the_submitted(ft_db):
     trimmed = {k: v for k, v in pings.items() if k in set(no_sub)}
     empty = metrics.post_submission_touches(prog, apps, flags, trimmed)
     assert empty["pings_after"] == 0
+
+
+# ---------------------------------------------------------------------------
+# BFA degree + pathway (2026-09 Slate layout)
+# ---------------------------------------------------------------------------
+
+def test_degree_is_derived_from_the_emphasis_prefix():
+    """Slate sends no degree column -- it prefixes the emphasis string."""
+    assert programs.degree_of("BFA - Acting for Film, Television & Theatre") == "BFA"
+    assert programs.degree_of("Acting for Film, Television & Theatre") == "AOS"
+    assert programs.degree_of("Acting for Musical Theatre") == "AOS"
+    # Blank stays blank: "no emphasis recorded" is not a degree.
+    assert programs.degree_of("") == ""
+    assert programs.degree_of(None) == ""
+    # Summer's emphasis vocabulary is unrelated, so the program gates it.
+    assert programs.get("ft").has_degree is True
+    assert programs.get("summer").has_degree is False
+
+
+def test_bfa_pathway_layout_wins_over_the_layout_it_extends(tmp_path):
+    """2026-09: Slate APPENDED "Application BFA Pathway" at 21.
+
+    Appending means the older 2026-08 layout's anchors still match the newer
+    file, so the only thing stopping a silent data loss is layout order. If
+    2026-08 ever resolves first, the pathway column is dropped without a
+    warning -- this test is the guard for that.
+    """
+    import io
+    import openpyxl as _ox
+    prog = programs.get("ft")
+
+    src = _ox.load_workbook(FT_FILE, read_only=True, data_only=True)
+    rows = [list(r) for i, r in
+            enumerate(src["Export"].iter_rows(values_only=True)) if i <= 60]
+    src.close()
+
+    out = _ox.Workbook()
+    ws = out.active
+    ws.title = "Export"
+    for i, row in enumerate(rows):
+        row = list(row)
+        # The 2026-08 shape this layout extends, plus the new column at 21.
+        row.insert(19, "Referral Info" if i == 0 else "")
+        if i == 0:
+            row.append("Application BFA Pathway")
+            row[20] = "Application Program Emphasis"
+        elif i % 2:
+            row.append("3-year")
+            row[20] = "BFA - Acting for Film, Television & Theatre"
+        else:
+            row.append(None)
+            row[20] = "Acting for Musical Theatre"
+        ws.append(row)
+    buf = io.BytesIO()
+    out.save(buf)
+    buf.seek(0)
+
+    headers = list(rows[0][:19]) + ["Referral Info", "Application Program Emphasis",
+                                    "Application BFA Pathway"]
+    layout, _ = prog.layout_for(headers)
+    assert layout is not None
+    assert layout.cols.get("bfa_pathway") == 21, \
+        "a 22-column export resolved to a layout that cannot see the pathway"
+
+    conn = db.connect(":memory:")
+    ingest.ingest(conn, buf, "ft", "bfa-layout.xlsx", "")
+
+    pairs = {(r["degree"], r["bfa_pathway"]): r["n"] for r in conn.execute(
+        "SELECT degree, bfa_pathway, COUNT(*) n FROM applicants GROUP BY 1,2")}
+    assert pairs.get(("BFA", "3-year")), "BFA pathway never made it into the row"
+    assert pairs.get(("AOS", "")), "AOS rows should carry no pathway"
+    # A pathway must never be invented for a non-BFA applicant.
+    assert not [k for k in pairs if k[0] == "AOS" and k[1]]
+
+    # The two dimensions filter independently of emphasis and of each other.
+    n_bfa = conn.execute(
+        "SELECT COUNT(*) FROM applicants WHERE %s"
+        % filters.Filters(prog, degrees=["BFA"]).where,
+        filters.Filters(prog, degrees=["BFA"]).params).fetchone()[0]
+    assert n_bfa == sum(v for k, v in pairs.items() if k[0] == "BFA")
+
+    # Summer never offers them, because it never derives a degree.
+    facets = filters.facet_values(conn, prog)
+    assert [v for v, _ in facets["degrees"]] == ["AOS", "BFA"]
+    assert [v for v, _ in facets["pathways"]] == ["3-year"]
+    conn.close()
+
+
+def test_degree_backfills_onto_rows_stored_before_the_column_existed():
+    """Degree is a pure function of emphasis, which older rows already have, so
+    a re-upload should not be needed to populate it."""
+    conn = db.connect(":memory:")
+    conn.execute(
+        "INSERT INTO applicants (program, global_id, emphasis, degree)"
+        " VALUES ('ft','g1','BFA - Acting for Film, Television & Theatre','')")
+    conn.execute(
+        "INSERT INTO applicants (program, global_id, emphasis, degree)"
+        " VALUES ('ft','g2','Acting for Musical Theatre','')")
+    # Summer must stay blank: its emphasis vocabulary is not a degree.
+    conn.execute(
+        "INSERT INTO applicants (program, global_id, emphasis, degree)"
+        " VALUES ('summer','g3','Focused Intensives-Musical Theatre','')")
+    conn.commit()
+
+    db._backfill_degree(conn)
+
+    got = {r["global_id"]: r["degree"] for r in
+           conn.execute("SELECT global_id, degree FROM applicants")}
+    assert got == {"g1": "BFA", "g2": "AOS", "g3": ""}
+    conn.close()
+
+
+def test_started_is_offered_on_both_channel_cards(tmp_path, monkeypatch):
+    """Started was withheld from these two pickers and is now offered on both.
+
+    On "which channels make up" it is the useful case -- the share of everyone
+    who started that each channel touched. On "which channels convert" it is
+    100% for every channel by construction, which is expected output and was
+    the original reason for withholding it.
+    """
+    from starlette.testclient import TestClient
+    from app import main as _main
+
+    dbpath = str(tmp_path / "started.db")
+    conn = db.connect(dbpath)
+    ingest.ingest(conn, FT_FILE, "ft", "ft.xlsx", "")
+    conn.close()
+    monkeypatch.setattr(_main, "DB_PATH", dbpath)
+
+    client = TestClient(_main.app)
+    body = client.get("/?program=ft&dates=all&cvs=started&mvs=started").text
+
+    # Both "measured against" bars carry a Started option, and neither card
+    # fell back to its default stage.
+    assert body.count('data-stage="started"') == 2
+    assert "Which channels" in body

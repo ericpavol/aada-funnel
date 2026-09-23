@@ -9,7 +9,7 @@ what is still open — the parts that don't survive in the code.
 same change. A stale entry here is worse than a missing one, because it will be
 trusted.
 
-_Last updated: 2026-08-07_
+_Last updated: 2026-09-23_
 
 ---
 
@@ -20,9 +20,13 @@ built from Slate "Ping Data" exports plus Google/Meta media spend. It answers:
 where applicants drop out of the funnel, which marketing channels bring them in,
 which channels convert, and what each outcome costs.
 
-Two programs are analysed **separately and never merged** — Full-Time (2 Year)
-and Summer. That is a golden rule from the handoff's `CLAUDE.md`, not a
-preference.
+Two programs are analysed **separately and never merged** — Full-Time and
+Summer. That is a golden rule from the handoff's `CLAUDE.md`, not a preference.
+
+Full-Time is no longer only the 2-year AOS: as of the 2026-09 export it also
+carries the BFA (3- and 4-year). Both arrive in the *same* Slate export and
+share one funnel, so they are one program here, separated by filters rather
+than by the golden rule. The nav label dropped "(2 Year)" accordingly.
 
 ## Ground rules that must not be broken
 
@@ -47,7 +51,7 @@ Summer: 4,483 → 954 → 387.
 FY 2025/26 paid media: **$288,357** (Google $140,222 · Meta $148,135).
 Blended first-touch cost per started app ≈ **$51**.
 
-**70 tests** pass against the real sample files. If a change moves any canonical
+**74 tests** pass against the real sample files. If a change moves any canonical
 number above, that is a regression until proven otherwise.
 
 ---
@@ -126,6 +130,53 @@ commit it, never paste it anywhere public. Rollback lives in Render's
 dashboard, not git.
 
 ---
+
+### AOS vs BFA: a filter dimension, not a third program
+AADA added a BFA alongside the AOS. Slate reports it in the **same Full-Time
+export**, through the same funnel columns, so it is not a separate `Program` —
+splitting it out would have meant duplicating every stage, layout and test for
+a population that shares one pipeline.
+
+Slate sends **no degree column**. It prefixes the emphasis string instead:
+`"BFA - Acting for Film, Television & Theatre"` is the BFA, and the unprefixed
+`"Acting for Film, Television & Theatre"` is AOS only. Confirmed with Eric
+(2026-09-23) that these are **different degrees, not one emphasis under two
+labels** — so `emphasis` is stored exactly as Slate sends it and `degree` is
+derived *alongside* it (`programs.degree_of`) rather than parsed out of it.
+Selecting Degree = BFA together with the unprefixed emphasis therefore returns
+nothing, and that is correct: no such applicant exists.
+
+Three filter dimensions result, and they are independent:
+`emphasis` (what they study, raw), `degree` (AOS / BFA), `bfa_pathway`
+(3-year / 4-year). Degree and pathway are **Full-Time only** — Summer's
+emphasis column carries an unrelated vocabulary ("Focused Intensives-Musical
+Theatre"), which is what `Program.has_degree` gates. Both dimensions are hidden
+when the data has none, the same way Country already was, and neither offers a
+"(none)" bucket: blank is ~97% of rows for pathway and a filter option holding
+almost everything is noise.
+
+`degree` backfills from the stored `emphasis` on connect (`db._backfill_degree`),
+so existing rows got it without a re-upload.
+
+**The 2026-09 layout APPENDED its column** (`Application BFA Pathway` at 21),
+which means the older 2026-08 layout's anchors still match a new file. Layout
+order is the only thing stopping the pathway being silently dropped —
+`FT_2026_09` must stay first in `Program.layouts`. There is a test pinning this.
+
+### "Started" is offered on both channel cards
+`Which channels convert to X` and `Which channels make up X` withheld Started;
+both now offer it, at Eric's request (2026-09-23), knowing the trade:
+
+* On **make up** it is the genuinely useful case — of everyone who started,
+  the share each channel touched (Google Paid 42%, Meta 31% on current data).
+* On **convert** it is degenerate. `ft_stages` hard-codes `"started": True`, so
+  every applicant row has reached it and every channel converts at exactly
+  100.0%. The flat chart is expected output, not a bug. Don't "fix" it, and
+  don't re-remove the option without asking.
+
+The `/cost` page's own stage picker still excludes Started and was left alone —
+out of scope for that request, but it is inconsistent with the overview cost
+card, which offers every stage.
 
 ### Ad performance: embedded Looker Studio report, not API-connected
 `/ads` shows Meta/Google ad performance via an `<iframe>` embed of a Looker
@@ -260,6 +311,21 @@ without this check.
 
 ## Still open
 
+- **Full-Time emphasis has two spellings for one programme.** The data holds
+  both `Acting for Film, Television & Theatre` and
+  `Acting for Theatre, Film, and Television` (~1.3k rows on the older label).
+  Same programme, word order changed — the same class of problem as the
+  Winter→Spring rename, and a candidate for the same fix
+  (`programs.canonical_term`'s sibling). Left alone for now because nobody has
+  confirmed they are genuinely the same, and collapsing them changes a facet.
+- **Spend from TikTok, ChatGPT (Paid) and Microsoft Ads** is coming (Eric,
+  2026-09-23; files not supplied yet). Channel-side: `TikTok` and
+  `AI Referral (ChatGPT etc.)` already exist in `taxonomy.py`, but both sit
+  past `PALETTE_SLOTS` (8) and draw grey, and neither is currently treated as
+  paid. There is **no Microsoft/Bing paid channel at all** — `Bing` exists only
+  as a sub-source of `Organic/Other Search`. Each platform also needs its own
+  parser in `spend.py`. Adding paid channels means revisiting the 8-slot
+  palette, so decide colours and paid/organic classification together.
 - Summer media spend (Eric will supply separately; the uploader already accepts a
   program per file).
 - Cohorting spend to each person's first-touch month, which would fix the
