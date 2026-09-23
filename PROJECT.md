@@ -191,9 +191,20 @@ one entry covers the AOS and BFA spellings both.
 Under the headline funnel each stage also shows AOS and BFA counts
 (`metrics.funnel_by`). Rows with a blank degree are **skipped, not pooled**, so
 the two groups do not necessarily sum to the headline — deliberate, because a
-third bar made of "we don't know" reads as a third programme. Shown as plain
-chips rather than a stacked bar: BFA is ~4% of AOS, and any shared scale draws
-it as a sliver.
+third bar made of "we don't know" reads as a third programme. Each stage's rail is stacked into three
+segments — AOS, BFA, and a grey "no degree recorded" — all measured against the
+same base (everyone who started), so the segments together are exactly as long
+as the unstacked bar and still match the total printed beside them.
+
+The grey segment is not optional: ~21% of Full-Time rows have a blank emphasis,
+so AOS + BFA alone would leave every bar visibly short of its own total. It is
+inert grey on purpose — missing data, not a third programme.
+
+BFA is the accent colour mixed toward ink rather than a fixed second hue. The
+accent is user-switchable across seven colours and any fixed partner collides
+with one of them; light-vs-dark of one hue survives all seven, and it is the
+convention the bar charts already use for a sub-source. The colour dot on each
+chip below the rail doubles as the key, so there is no separate legend.
 
 ### Tip popovers are positioned in JS, not guessed in CSS
 A `.tip-pop` is 430px wide and absolutely positioned, and an absolutely
