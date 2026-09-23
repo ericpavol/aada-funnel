@@ -108,6 +108,155 @@ def funnel_by(program, applicants, flags, column, order=None):
             for g in names]
 
 
+# ---------------------------------------------------------------------------
+# Year over year, same point in the year
+# ---------------------------------------------------------------------------
+
+def _shift_year(iso, years=-1):
+    """'2026-09-23' -> '2025-09-23'. 29 Feb lands on the 28th."""
+    y, m, d = int(iso[:4]), int(iso[5:7]), int(iso[8:10])
+    y += years
+    if m == 2 and d == 29:
+        d = 28
+    return "%04d-%02d-%02d" % (y, m, d)
+
+
+def yoy_window(date_from, date_to, today):
+    """The pair of windows to compare -> (current, prior), each (lo, hi).
+
+    The current window is CAPPED AT TODAY, which is the whole point. A fiscal
+    year filter runs to next August, but three weeks into it only three weeks
+    have happened; comparing that against twelve months of last year is the
+    mistake this exists to prevent.
+    """
+    if not date_from:
+        return None, None
+    hi = min(date_to, today) if date_to else today
+    if hi < date_from:
+        return None, None
+    cur = (date_from, hi)
+    return cur, (_shift_year(date_from), _shift_year(hi))
+
+
+def yoy_funnel(conn, program, flt, today, cohort_field=None):
+    """Stage-by-stage comparison of this period against the same period a year
+    earlier.
+
+    Each stage is counted only as far as its OWN date column
+    (`Program.stage_dates`), so last year's number is where that cohort stood on
+    the same day -- not where it stands now. A stage with no date column cannot
+    be time-boxed at all and is returned `comparable: False` with last year's
+    present-day figure for context and no delta. See Program.stage_dates.
+    """
+    field = cohort_field or flt.date_field or "started_date"
+    cur, prior = yoy_window(flt.date_from, flt.date_to, today)
+    if not cur:
+        return None
+
+    # Everything except this filter's own date range -- the range is what we are
+    # replacing with each window in turn.
+    base = flt.without("date")
+
+    def count(where_extra, params_extra, lo, hi):
+        sql = ("SELECT COUNT(*) FROM applicants WHERE " + base.where +
+               " AND %s <> '' AND %s >= ? AND %s <= ?" % (field, field, field))
+        params = list(base.params) + [lo, hi]
+        if where_extra:
+            sql += " AND " + where_extra
+            params += params_extra
+        return conn.execute(sql, params).fetchone()[0]
+
+    rows = []
+    for key in program.stage_keys:
+        datecol = program.stage_dates.get(key)
+        label = program.stage_labels[key]
+        if datecol:
+            # Reached the stage, and reached it by the end of that window.
+            extra = "%s <> '' AND %s <= ?" % (datecol, datecol)
+            c = count(extra, [cur[1]], *cur)
+            p = count(extra, [prior[1]], *prior)
+            rows.append({"key": key, "label": label, "comparable": True,
+                         "current": c, "prior": p,
+                         "delta": (c - p) / p if p else None,
+                         "diff": c - p})
+        else:
+            # No date: the best available prior figure is today's snapshot, which
+            # is NOT a like-for-like number. Carried for context, never a delta.
+            c = count("st_%s = 1" % key, [], *cur)
+            p = count("st_%s = 1" % key, [], *prior)
+            rows.append({"key": key, "label": label, "comparable": False,
+                         "current": c, "prior": p, "delta": None, "diff": None})
+    # The database does not reach back forever. Without this, the first year
+    # with data compares against a nearly-empty one and reports +3473% growth,
+    # which is a statement about the upload history, not about marketing.
+    base_row = next((r for r in rows if r["key"] == program.stage_keys[0]), None)
+    thin = bool(base_row and base_row["current"]
+                and base_row["prior"] < base_row["current"] * 0.1)
+    return {"current": cur, "prior": prior, "field": field,
+            "field_label": program.date_fields.get(field, field),
+            "rows": rows, "prior_thin": thin,
+            "prior_n": base_row["prior"] if base_row else 0,
+            "n_comparable": sum(1 for r in rows if r["comparable"])}
+
+
+def yoy_pace(conn, program, flt, cur, prior, field="started_date"):
+    """Cumulative count per day across each window, for the pace chart.
+
+    Both series are indexed by DAY OFFSET, not by date, so they overlay: day 1
+    of this year sits on day 1 of last year.
+    """
+    import datetime as _dt
+
+    def series(lo, hi):
+        rows = conn.execute(
+            "SELECT %s AS d, COUNT(*) n FROM applicants WHERE %s"
+            " AND %s <> '' AND %s >= ? AND %s <= ? GROUP BY 1"
+            % (field, flt.without("date").where, field, field, field),
+            list(flt.without("date").params) + [lo, hi]).fetchall()
+        by_day = {r["d"]: r["n"] for r in rows}
+        start = _dt.date(int(lo[:4]), int(lo[5:7]), int(lo[8:10]))
+        end = _dt.date(int(hi[:4]), int(hi[5:7]), int(hi[8:10]))
+        out, run = [], 0
+        for i in range((end - start).days + 1):
+            run += by_day.get((start + _dt.timedelta(days=i)).isoformat(), 0)
+            out.append(run)
+        return out
+
+    a, b = series(*cur), series(*prior)
+    n = min(len(a), len(b))            # a leap year makes these differ by one
+    return {"current": a[:n], "prior": b[:n], "days": n}
+
+
+def yoy_channels(conn, program, flt, cur, prior, field="started_date", limit=8):
+    """Per-channel reach in each window -> rows sorted by this year's size.
+
+    Any-touch (distinct people who touched the channel), matching how the
+    channel cards on the same page count. These rows overlap and must not be
+    summed -- see CLAUDE.md.
+    """
+    base = flt.without("date")
+
+    def pull(lo, hi):
+        rows = conn.execute(
+            "SELECT p.channel c, COUNT(DISTINCT p.applicant_id) n FROM pings p"
+            " WHERE p.channel <> '' AND p.applicant_id IN"
+            "   (SELECT id FROM applicants WHERE %s AND %s <> ''"
+            "    AND %s >= ? AND %s <= ?)"
+            " GROUP BY 1" % (base.where, field, field, field),
+            list(base.params) + [lo, hi]).fetchall()
+        return {r["c"]: r["n"] for r in rows}
+
+    now, was = pull(*cur), pull(*prior)
+    out = []
+    for name in set(now) | set(was):
+        c, p = now.get(name, 0), was.get(name, 0)
+        out.append({"channel": name, "current": c, "prior": p,
+                    "delta": (c - p) / p if p else None, "diff": c - p,
+                    "colour_index": taxonomy.channel_slot(name)})
+    out.sort(key=lambda r: -max(r["current"], r["prior"]))
+    return out[:limit]
+
+
 def build_matrix(program, applicants, flags, pings_by_app, touch="any"):
     """Channel x stage matrix.
 

@@ -648,6 +648,57 @@
     });
   }
 
+  /** Year-over-year pace: cumulative starts, this year against the same days
+   * last year. Indexed by DAY OFFSET rather than date so the two overlay --
+   * day 1 sits on day 1. Last year is dashed and grey: it is the reference,
+   * not a second thing being measured. */
+  function yoyPaceChart(data) {
+    register("yoyPace", function (el, t) {
+      var labels = data.cur.map(function (_v, i) { return i + 1; });
+      return new Chart(el, {
+        type: "line",
+        data: {
+          labels: labels,
+          datasets: [
+            { label: data.priLabel, data: data.pri, borderColor: t.ink3,
+              borderDash: [4, 3], borderWidth: 2, pointRadius: 0,
+              tension: .25, fill: false },
+            { label: data.curLabel, data: data.cur, borderColor: t.accent,
+              borderWidth: 2.5, pointRadius: 0, tension: .25, fill: false }
+          ]
+        },
+        options: {
+          maintainAspectRatio: false,
+          interaction: { mode: "index", intersect: false },
+          plugins: {
+            legend: { display: true, position: "bottom",
+                      labels: { boxWidth: 18, boxHeight: 2, font: { size: 11 },
+                                color: t.ink2, usePointStyle: false } },
+            tooltip: {
+              callbacks: {
+                title: function (c) { return "Day " + c[0].label; },
+                label: function (c) {
+                  return c.dataset.label + ": " + numFmt(c.parsed.y);
+                }
+              }
+            }
+          },
+          scales: {
+            x: { grid: { display: false }, border: { color: t.axis },
+                 ticks: { color: t.ink3, font: { size: 10 }, maxTicksLimit: 8,
+                          callback: function (v, i) { return i + 1; } },
+                 title: { display: true, text: "day of year", color: t.ink3,
+                          font: { size: 10 } } },
+            y: { beginAtZero: true, grid: { color: t.grid },
+                 border: { display: false },
+                 ticks: { color: t.ink3, font: { size: 10 },
+                          callback: function (v) { return numFmt(v); } } }
+          }
+        }
+      });
+    });
+  }
+
   /** Composition — first touch assigns each person exactly one channel, so this
    * is the one chart here whose shares genuinely total 100%. Percentages appear
    * in three places on purpose: the legend (exact, every slice), on the arcs
@@ -1727,6 +1778,7 @@
     wireStagePicks: wireStagePicks,
     comparisonChart: comparisonChart,
     makeupChart: makeupChart,
+    yoyPaceChart: yoyPaceChart,
     mixChart: mixChart,
     penetrationChart: penetrationChart,
     timelineChart: timelineChart,

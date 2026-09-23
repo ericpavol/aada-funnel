@@ -104,6 +104,10 @@
       <div class="figure-unit">applicants in scope{% if filters.active %} · filtered{% endif %}</div>
       <p class="herometa">No marketing attribution in this view — just the raw
         progression. Each step is measured against the stage before it.</p>
+      {% if not yoy_on %}
+        <a class="btn ghost sm" href="?{{ qs_set(request, 'yoy', '1') }}#yoy"
+           style="margin-top:4px">Compare to last year →</a>
+      {% endif %}
       {% if 'enrolled' in program.stage_keys %}
         {# A DIV, not a <p>: tip() emits <p> elements, and a <p> inside a <p>
            makes the parser close the outer one — which silently hoisted the
@@ -188,6 +192,112 @@
     </div>
   </div>
 </section>
+
+{# ---------- 1b. YEAR OVER YEAR ---------- #}
+{% if yoy_on %}
+<section class="card" id="yoy">
+  <div class="cardhead">
+    <div class="grow">
+      <div class="eyebrow">Year over year · same point in the year</div>
+      <h2 class="display">How this year is <span class="serif-it">tracking</span>{{ tip([
+        'Last year is cut off at the SAME calendar day, not shown as it stands
+         today. Three weeks into a year, only three weeks have happened — comparing
+         that against twelve months of last year would report a collapse every
+         year, forever.',
+        'Stages marked <b>n/a</b> have no date in Slate, only a yes/no flag, so
+         there is no way to ask where last year&#39;s cohort had got to by this day.
+         They light up automatically once Slate sends the dates.',
+      ]) }}</h2>
+    </div>
+    <a class="btn ghost" href="?{{ qs_set(request, 'yoy', none) }}#yoy">Hide</a>
+  </div>
+
+  {% if not yoy %}
+    <p class="sub">Pick a fiscal year in the filter bar to compare against.
+      “All time” has no matching period.</p>
+  {% else %}
+    <p class="sub">{{ yoy.current[0] }} → {{ yoy.current[1] }}
+      vs {{ yoy.prior[0] }} → {{ yoy.prior[1] }} · by {{ yoy.field_label|lower }}</p>
+
+    {% if yoy.prior_thin %}
+      <div class="note warn" style="margin-top:10px">
+        <b>Thin comparison.</b> Last year's window holds only
+        {{ yoy.prior_n|num }} record(s), so these percentages describe how far
+        back the uploaded data goes, not how marketing performed.
+      </div>
+    {% endif %}
+
+    <div class="yoyrows">
+      {% for r in yoy.rows %}
+        {% if loop.first or (yoy.rows[loop.index0 - 1].comparable and not r.comparable) %}
+          {% if not r.comparable %}
+            <div class="yoycut"><span></span><em>no date in Slate for these — last
+              year's figure is where that group stands <b>today</b>, after another
+              twelve months</em><span></span></div>
+          {% endif %}
+        {% endif %}
+        <div class="yoyrow{{ '' if r.comparable else ' na' }}">
+          <div class="ystg">{{ r.label }}</div>
+          <div class="ybars">
+            {% set top = [r.current, r.prior, 1]|max %}
+            <div class="ybar cur" style="width:{{ (r.current / top * 100)|round(1) }}%"
+                 title="This year: {{ r.current|num }}"></div>
+            <div class="ybar pri" style="width:{{ (r.prior / top * 100)|round(1) }}%"
+                 title="Last year, same point: {{ r.prior|num }}"></div>
+          </div>
+          <div class="yn">{{ r.current|num }}</div>
+          <div class="yn pale">{{ r.prior|num }}</div>
+          <div class="ydelta">
+            {% if not r.comparable %}
+              <span class="na">n/a</span>
+            {% elif r.delta is none %}
+              <span class="na">—</span>
+            {% else %}
+              <span class="{{ 'up' if r.diff >= 0 else 'down' }}">{{
+                '+' if r.diff >= 0 else '' }}{{ (r.delta * 100)|round(0)|int }}%</span>
+            {% endif %}
+          </div>
+        </div>
+      {% endfor %}
+    </div>
+
+    <p class="hint" style="margin-top:10px">Submitted counts only applications
+      submitted <b>by this point</b> in each year. Applicants often submit weeks
+      or months after starting, so both years' figures will keep rising.</p>
+
+    {# ---- pace ---- #}
+    <div class="yoysplit">
+      <div>
+        <div class="eyebrow" style="margin-bottom:6px">Pace · cumulative {{
+          yoy.rows[0].label|lower }}</div>
+        <div class="chartbox sm"><canvas id="yoyPace"></canvas></div>
+      </div>
+      <div>
+        <div class="eyebrow" style="margin-bottom:6px">Channels · people reached</div>
+        <div class="ychans">
+          {% for c in yoy.channels %}
+            {% set top = yoy.channels|map(attribute='current')|max %}
+            <div class="ychan">
+              <span class="ycn">{{ c.channel }}</span>
+              <span class="ycbar"><i style="width:{{ (c.current / top * 100)|round(1) if top else 0 }}%"></i></span>
+              <span class="ycd">
+                {% if c.delta is none %}
+                  <span class="na">new</span>
+                {% else %}
+                  <span class="{{ 'up' if c.diff >= 0 else 'down' }}">{{
+                    '+' if c.diff >= 0 else '' }}{{ (c.delta * 100)|round(0)|int }}%</span>
+                {% endif %}
+              </span>
+              <span class="ycv">{{ c.prior|num }} → {{ c.current|num }}</span>
+            </div>
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+
+  {% endif %}
+</section>
+{% endif %}
 
 {# ---------- 2. COMPARISON ---------- #}
 <div class="grid2">
@@ -511,6 +621,11 @@
 </details>
 
 <script>
+  {% if yoy_on and yoy %}AADA.yoyPaceChart({{ {
+    'cur': yoy.pace.current, 'pri': yoy.pace.prior,
+    'curLabel': 'FY ' ~ yoy.current[0][:4] ~ '/' ~ ((yoy.current[0][:4]|int + 1)|string)[2:],
+    'priLabel': 'FY ' ~ yoy.prior[0][:4] ~ '/' ~ ((yoy.prior[0][:4]|int + 1)|string)[2:]
+  }|tojson }});{% endif %}
   AADA.comparisonChart({{ chart_comparison|tojson }}, {{ comparison.baseline_rate|tojson }},
                        {{ comparison.final_label|tojson }});
   AADA.makeupChart({{ chart_makeup|tojson }}, {{ makeup.final_total|tojson }},

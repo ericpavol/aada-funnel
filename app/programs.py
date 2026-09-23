@@ -185,12 +185,28 @@ class Layout:
 class Program:
     def __init__(self, key, label, layouts, stage_keys, stage_labels, stage_fn,
                  date_fields, extra_stages=None, channel_stage=None,
-                 has_degree=False):
+                 has_degree=False, stage_dates=None):
         self.key = key
         self.label = label
         # Whether this program's emphasis column encodes an AOS/BFA degree.
         # Full-Time only -- see degree_of().
         self.has_degree = has_degree
+        # stage key -> the stored date column that says WHEN it happened.
+        #
+        # This is what makes a year-over-year comparison honest, and it is
+        # deliberately a map with holes in it. Slate sends a date for Started
+        # and Submitted but only a yes/no flag for the audition stages onward,
+        # so for those there is no way to ask "where had last year's cohort got
+        # to by this same day" -- last year's flag is where that cohort stands
+        # TODAY, after twelve more months of progress. Comparing against it
+        # invents a collapse that is really just the calendar (measured: the
+        # 2025 cohort shows 111 submitted today but only 62 by day 23).
+        #
+        # A stage missing from this map reports as "not comparable" rather than
+        # guessing. When Slate starts sending a date for one, add the column to
+        # a Layout and add ONE line here -- the comparison view reads this map
+        # and needs no changes at all.
+        self.stage_dates = stage_dates or {}
         self.layouts = layouts          # newest arrangement first
         self.stage_keys = stage_keys    # ordered funnel stages
         self.stage_labels = stage_labels
@@ -322,6 +338,9 @@ FT = Program(
     stage_fn=ft_stages,
     extra_stages={"enrolled": _ft_enrolled},
     channel_stage="admitted",
+    # aud_req / aud_comp / admitted / enrolled are flags with no date -- see
+    # Program.stage_dates. Add them here the moment Slate ships the columns.
+    stage_dates={"started": "started_date", "submitted": "submitted_date"},
     date_fields={
         "started_date": "App Start Date",
         "submitted_date": "App Submitted Date",
@@ -356,6 +375,7 @@ SUMMER = Program(
         "accepted": "Accepted",
     },
     stage_fn=summer_stages,
+    stage_dates={"started": "started_date"},
     date_fields={
         "started_date": "App Date",
     },

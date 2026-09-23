@@ -1909,3 +1909,119 @@ def test_funnel_by_degree_splits_and_skips_blanks(ft_db):
     for g in split:
         for k in prog.stage_keys:
             assert g["counts"][k] <= overall["counts"][k]
+
+
+# ---------------------------------------------------------------------------
+# Year over year, same point in the year
+# ---------------------------------------------------------------------------
+
+def test_yoy_window_caps_the_current_period_at_today():
+    """A fiscal-year filter runs to next August. Three weeks in, only three
+    weeks have happened -- comparing that against twelve months of last year is
+    the entire mistake this feature exists to avoid."""
+    cur, prior = metrics.yoy_window("2026-09-01", "2027-08-31", "2026-09-23")
+    assert cur == ("2026-09-01", "2026-09-23")
+    assert prior == ("2025-09-01", "2025-09-23")
+
+    # A period that has already finished is compared in full.
+    cur, prior = metrics.yoy_window("2024-09-01", "2025-08-31", "2026-09-23")
+    assert cur == ("2024-09-01", "2025-08-31")
+    assert prior == ("2023-09-01", "2024-08-31")
+
+    # No date filter -> nothing to compare against.
+    assert metrics.yoy_window("", "", "2026-09-23") == (None, None)
+
+
+def test_yoy_counts_last_year_as_it_stood_then_not_as_it_stands_now(ft_db):
+    """The headline invariant.
+
+    A stage with a date column must be counted only as far as that date inside
+    each window. Counting last year's flag instead reports where that cohort is
+    TODAY -- on real data the 2025 September cohort shows 111 submitted now but
+    only 62 had submitted by day 23, so the naive version turns a flat year into
+    a 43% collapse.
+    """
+    conn, prog = ft_db, programs.get("ft")
+    span = conn.execute(
+        "SELECT MIN(started_date) lo, MAX(started_date) hi FROM applicants"
+        " WHERE program='ft' AND started_date<>''").fetchone()
+    lo = span["lo"]
+    hi = "%s-%s-23" % (lo[:4], lo[5:7])          # 23 days into the data
+    flt = filters.Filters(prog, date_field="started_date", date_from=lo, date_to=hi)
+
+    res = metrics.yoy_funnel(conn, prog, flt, hi)
+    assert res is not None
+    by_key = {r["key"]: r for r in res["rows"]}
+
+    # Submitted is date-boxed, so it can only count people who had submitted by
+    # the window's end -- never more than the flag-based total for that cohort.
+    flagged = conn.execute(
+        "SELECT COUNT(*) FROM applicants WHERE program='ft' AND st_submitted=1"
+        " AND started_date BETWEEN ? AND ?", (lo, hi)).fetchone()[0]
+    boxed = conn.execute(
+        "SELECT COUNT(*) FROM applicants WHERE program='ft'"
+        " AND started_date BETWEEN ? AND ?"
+        " AND submitted_date<>'' AND submitted_date<=?", (lo, hi, hi)).fetchone()[0]
+    assert by_key["submitted"]["current"] == boxed
+    assert boxed <= flagged
+
+
+def test_yoy_refuses_a_delta_for_stages_with_no_date(ft_db):
+    conn, prog = ft_db, programs.get("ft")
+    lo = conn.execute("SELECT MIN(started_date) d FROM applicants"
+                      " WHERE program='ft' AND started_date<>''").fetchone()["d"]
+    hi = "%s-%s-23" % (lo[:4], lo[5:7])
+    flt = filters.Filters(prog, date_field="started_date", date_from=lo, date_to=hi)
+    rows = {r["key"]: r for r in metrics.yoy_funnel(conn, prog, flt, hi)["rows"]}
+
+    for key in ("started", "submitted"):
+        assert rows[key]["comparable"] is True, key
+    for key in ("aud_req", "aud_comp", "admitted", "enrolled"):
+        assert rows[key]["comparable"] is False, key
+        assert rows[key]["delta"] is None, key
+        assert rows[key]["diff"] is None, key
+
+
+def test_a_stage_becomes_comparable_the_moment_it_gets_a_date(ft_db, monkeypatch):
+    """The whole point of Program.stage_dates being a map.
+
+    Slate will eventually send dates for the audition stages. When it does the
+    work must be one line here -- not a change to the comparison view. This
+    proves the view reads the map rather than hardcoding two stages.
+    """
+    conn, prog = ft_db, programs.get("ft")
+    lo = conn.execute("SELECT MIN(started_date) d FROM applicants"
+                      " WHERE program='ft' AND started_date<>''").fetchone()["d"]
+    hi = "%s-%s-23" % (lo[:4], lo[5:7])
+    flt = filters.Filters(prog, date_field="started_date", date_from=lo, date_to=hi)
+
+    before = {r["key"]: r for r in metrics.yoy_funnel(conn, prog, flt, hi)["rows"]}
+    assert before["aud_req"]["comparable"] is False
+
+    # Pretend Slate now sends one. `completed_date` already exists as a stored
+    # column, so it stands in for the real thing without touching the schema.
+    patched = dict(prog.stage_dates, aud_req="completed_date")
+    monkeypatch.setattr(prog, "stage_dates", patched)
+
+    after = {r["key"]: r for r in metrics.yoy_funnel(conn, prog, flt, hi)["rows"]}
+    assert after["aud_req"]["comparable"] is True
+    assert after["aud_req"]["delta"] is not None or after["aud_req"]["prior"] == 0
+    # Everything still without a date stays refused.
+    assert after["admitted"]["comparable"] is False
+
+
+def test_yoy_pace_series_align_day_for_day(ft_db):
+    conn, prog = ft_db, programs.get("ft")
+    lo = conn.execute("SELECT MIN(started_date) d FROM applicants"
+                      " WHERE program='ft' AND started_date<>''").fetchone()["d"]
+    hi = "%s-%s-23" % (lo[:4], lo[5:7])
+    flt = filters.Filters(prog, date_field="started_date", date_from=lo, date_to=hi)
+    res = metrics.yoy_funnel(conn, prog, flt, hi)
+    pace = metrics.yoy_pace(conn, prog, flt, res["current"], res["prior"])
+
+    assert len(pace["current"]) == len(pace["prior"]) == pace["days"]
+    # Cumulative: never decreases, and ends on the stage total for the window.
+    assert pace["current"] == sorted(pace["current"])
+    assert pace["prior"] == sorted(pace["prior"])
+    started = {r["key"]: r for r in res["rows"]}["started"]
+    assert pace["current"][-1] == started["current"]

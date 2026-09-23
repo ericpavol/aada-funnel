@@ -51,7 +51,7 @@ Summer: 4,483 → 954 → 387.
 FY 2025/26 paid media: **$288,357** (Google $140,222 · Meta $148,135).
 Blended first-touch cost per started app ≈ **$51**.
 
-**78 tests** pass against the real sample files. If a change moves any canonical
+**83 tests** pass against the real sample files. If a change moves any canonical
 number above, that is a regression until proven otherwise.
 
 ---
@@ -314,6 +314,37 @@ Drag-and-drop is layered on in `uploads.html`. Two things worth knowing:
 Non-`.xlsx`/`.csv` files are dropped on the floor with a count ("2 file(s)
 ignored"), and a file dropped anywhere else on the page is swallowed so the
 browser doesn't navigate away to it and lose the form.
+
+### Year over year compares the same POINT in the year, never year-to-date
+`?yoy=1` on the overview. The current window is capped at **today** and the
+prior window is the same calendar days a year earlier. A fiscal-year filter runs
+to next August; three weeks in, only three weeks have happened, and comparing
+that against twelve months of last year would report a collapse every year
+forever.
+
+**Each stage is time-boxed by its OWN date column**, declared in
+`Program.stage_dates`. Measured on real data: the Sept-2025 cohort shows **111**
+submitted *today* but only **62** had submitted *by day 23*. Against this year's
+63 that is the difference between "−43%, panic" and "+2%, flat". Eric's call
+(2026-09-23): show the 62, with a standing note that applicants often submit
+weeks or months after starting, so both years' figures keep rising.
+
+`stage_dates` is deliberately a map **with holes in it**. Slate sends a date for
+Started and Submitted only; audition onward are yes/no flags, so there is no way
+to ask where last year's cohort stood on the same day — its flag reflects twelve
+extra months. Those stages report `comparable: False`, show last year's
+present-day figure greyed for context, and render `n/a` instead of a delta.
+
+**This is the bit to not break:** the view reads the map. When Slate ships a date
+for an audition stage, the work is (1) add the column to a new `Layout`, (2) add
+one line to `stage_dates`. The comparison view needs no changes — there is a test
+(`test_a_stage_becomes_comparable_the_moment_it_gets_a_date`) that fails if
+someone hardcodes the two stages instead.
+
+Also in the section: a cumulative **pace** chart indexed by day offset so the two
+years overlay, and per-channel deltas. A near-empty prior window is flagged
+rather than reported as growth — the first year with data otherwise shows
+"+3473%", which is a statement about upload history, not marketing.
 
 ## Analytical decisions worth not re-litigating
 

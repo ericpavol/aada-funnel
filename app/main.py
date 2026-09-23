@@ -5,6 +5,7 @@ applicant data ever leaves this machine. The one exception is /ads: the browser
 loads an embedded Looker Studio report directly from lookerstudio.google.com,
 which carries no applicant data (see AD_REPORT_PAGES below).
 """
+import datetime as _dt
 import os
 from typing import Optional
 
@@ -385,6 +386,18 @@ def overview(request: Request):
         pings = metrics.load_pings(conn, [a["id"] for a in apps])
 
         overall = metrics.overall_funnel(program, flags)
+
+        # Year over year, same point in the year. Needs an active date range --
+        # "all time" has no counterpart period to compare against.
+        yoy = None
+        if q.get("yoy") == "1":
+            today = _dt.date.today().isoformat()
+            yoy = metrics.yoy_funnel(conn, program, flt, today)
+            if yoy:
+                yoy["pace"] = metrics.yoy_pace(
+                    conn, program, flt, yoy["current"], yoy["prior"], yoy["field"])
+                yoy["channels"] = metrics.yoy_channels(
+                    conn, program, flt, yoy["current"], yoy["prior"], yoy["field"])
         # AOS vs BFA beside the headline funnel. Blank-degree rows are
         # excluded, so these two do not sum to `overall` -- see funnel_by.
         overall_split = (metrics.funnel_by(program, apps, flags, "degree",
@@ -605,6 +618,7 @@ def overview(request: Request):
             cost_attr=cost_attr, attributions=ATTRIBUTIONS,
             cost_payload=cost_payload,
             overall_split=overall_split,
+            yoy=yoy, yoy_on=(q.get("yoy") == "1"),
             chart_penetration=chart_penetration,
             series_index=series_index,
             pen_tree=pen_tree, pen_selected=pen_selected, pen_all=pen_all,

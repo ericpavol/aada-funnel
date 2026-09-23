@@ -791,3 +791,54 @@ code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11.5px;
    zone -- the child would become the event target and the counter would drift. */
 .dropzone.over .dz-main,.dropzone.over .dz-sub{pointer-events:none}
 .dz-warn{display:block;margin-top:6px;color:var(--delta-down)}
+
+/* ==================== year over year ==================== */
+.yoyrows{margin-top:14px}
+.yoyrow{display:grid;grid-template-columns:150px 1fr 58px 58px 56px;gap:12px;
+  align-items:center;padding:8px 0;border-bottom:1px solid var(--ring-2)}
+.yoyrow:last-child{border-bottom:0}
+.ystg{font-size:12.5px;font-weight:500}
+.ybars{display:flex;flex-direction:column;gap:3px}
+.ybar{height:7px;border-radius:var(--r-pill);min-width:2px}
+.ybar.cur{background:var(--accent)}
+.ybar.pri{background:var(--ink-3);opacity:.45}
+.yn{font-size:14px;text-align:right;font-variant-numeric:tabular-nums}
+.yn.pale{color:var(--ink-3)}
+.ydelta{text-align:right;font-size:12px;font-weight:600;
+  font-variant-numeric:tabular-nums}
+.ydelta .up{color:var(--delta-up)}
+.ydelta .down{color:var(--delta-down)}
+.ydelta .na,.ychan .na{color:var(--ink-3);font-weight:500}
+/* Stages with no date column: shown for context, never as a comparison. */
+.yoyrow.na .ystg,.yoyrow.na .yn{opacity:.55}
+.yoyrow.na .ybar.cur{background:var(--axis)}
+.yoyrow.na .ybar.pri{background:var(--axis);opacity:.4}
+.yoycut{display:flex;align-items:center;gap:10px;margin:12px 0 6px}
+.yoycut span{flex:1;height:1px;background:var(--ring)}
+.yoycut em{font-style:normal;font-size:10.5px;color:var(--ink-3);text-align:center;
+  max-width:420px;line-height:1.5}
+
+.yoysplit{display:grid;grid-template-columns:1fr 1fr;gap:22px;margin-top:20px;
+  padding-top:16px;border-top:1px solid var(--ring-2)}
+.chartbox.sm{height:190px}
+.ychans{display:flex;flex-direction:column;gap:6px}
+.ychan{display:grid;grid-template-columns:1fr 70px 52px 76px;gap:9px;
+  align-items:center;font-size:12px}
+.ycn{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ycbar{height:6px;background:var(--surface-2);border-radius:var(--r-pill);
+  overflow:hidden}
+.ycbar i{display:block;height:100%;background:var(--accent);
+  border-radius:var(--r-pill)}
+.ycd{text-align:right;font-weight:600;font-variant-numeric:tabular-nums}
+.ycd .up{color:var(--delta-up)}
+.ycd .down{color:var(--delta-down)}
+.ycv{text-align:right;color:var(--ink-3);font-variant-numeric:tabular-nums}
+
+.btn.ghost{background:transparent;color:var(--ink-2);border:1px solid var(--ring)}
+.btn.ghost:hover{border-color:var(--accent-strong);color:var(--accent-strong)}
+.btn.sm{padding:4px 11px;font-size:12px}
+
+@media (max-width:900px){
+  .yoysplit{grid-template-columns:1fr}
+  .yoyrow{grid-template-columns:110px 1fr 48px 48px 48px;gap:8px}
+}
