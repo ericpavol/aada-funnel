@@ -738,11 +738,22 @@ code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11.5px;
    same colour twice (measured gap 0.00-0.12). This holds for all seven in both
    themes, because --accent-fg is itself theme-aware. */
 .rail.split i.seg-1{background:color-mix(in oklab,var(--accent) 42%,var(--accent-fg))}
-/* "No degree recorded" -- pitched to sit just above the empty track so the bar
-   still spans the stage's real total, while reading as absent data rather than
-   as a third programme. Two colours carry meaning here; this one carries none
-   on purpose. */
-.rail.split i.seg-u{background:color-mix(in oklab,var(--ink) 9%,var(--surface-2))}
+/* "No degree selected yet" -- a real bucket of real applicants, not absence.
+   It was first drawn as a near-invisible tint just above the track, which made
+   it read as empty space, i.e. as nobody, when those people ARE recorded and
+   have simply not chosen a degree. It gets a solid tone and its own chip.
+
+   Achromatic on purpose: grey is the one tone that cannot collide with any of
+   the seven accents, and it reads as "not a programme" without vanishing.
+
+   A FIXED mid grey, not derived from --ink. A theme-derived grey has to be
+   light in dark mode and dark in light mode, and both ends collide with the
+   BFA segment for one accent or another; this one was picked by measuring the
+   worst-case gap against BFA and against the track across all seven accents in
+   both themes (0.14 / 0.35 -- the best of everything tried). It also stays put
+   when the theme flips, which is what you want from a neutral. */
+.rail.split i.seg-u,
+.chip-split i.seg-u{background:#9a9a95}
 
 /* Chip dots reuse the rail's two greens as the key. Declared separately from
    the rail because they are not inside `.rail.split`. */

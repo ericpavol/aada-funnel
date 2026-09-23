@@ -197,8 +197,19 @@ same base (everyone who started), so the segments together are exactly as long
 as the unstacked bar and still match the total printed beside them.
 
 The grey segment is not optional: ~21% of Full-Time rows have a blank emphasis,
-so AOS + BFA alone would leave every bar visibly short of its own total. It is
-inert grey on purpose — missing data, not a third programme.
+so AOS + BFA alone would leave every bar visibly short of its own total.
+
+It is labelled **"No degree yet"**, not "no degree recorded" — those applicants
+*are* recorded, they simply have not chosen a degree. It was first drawn as a
+near-invisible tint just above the track, which made it read as empty space,
+i.e. as nobody. It now carries a solid mid grey (`#9a9a95`) and its own chip.
+
+That grey is FIXED, not derived from `--ink`. A theme-derived grey has to be
+light in dark mode and dark in light mode, and both ends collide with the BFA
+segment for one accent or another; this value was picked by measuring the
+worst-case lightness gap against BFA and against the track across all seven
+accents in both themes (0.14 / 0.35, the best of everything tried). Achromatic
+on purpose too: grey is the one tone that cannot clash with any accent.
 
 The segments are FLAT fills. The unstacked rail fades dark->light across its
 width, and inheriting that put a gradient *inside* the first segment, so a

@@ -132,9 +132,13 @@
                long as the single bar would have been, and the stage's own
                total still reads off the right-hand number.
 
-               The third segment is people with no degree recorded. It has to
-               be drawn: ~21% of rows have a blank emphasis, so AOS + BFA alone
-               would leave the bar visibly short of the total beside it. #}
+               The third segment is applicants who have not picked a degree
+               yet. They ARE real records -- it was drawn as a near-invisible
+               grey at first, which made it read as empty track, i.e. as
+               nobody. It carries a proper colour and its own chip for that
+               reason. It also has to be drawn at all: ~21% of rows have a
+               blank emphasis, so AOS + BFA alone would leave the bar visibly
+               short of the total beside it. #}
             {% set base = overall.counts['started'] or 1 %}
             {% set named = overall_split|sum(attribute='counts.' ~ s.key) %}
             <div class="rail split">
@@ -144,7 +148,7 @@
                    title="{{ g.name }}: {{ g.counts[s.key]|num }}"></i>
               {% endfor %}
               <i class="seg-u" style="width:{{ ((s.n - named) / base * 100)|round(3) }}%"
-                 title="No degree recorded: {{ (s.n - named)|num }}"></i>
+                 title="No degree selected yet: {{ (s.n - named)|num }}"></i>
             </div>
           {% else %}
             <div class="rail">
@@ -170,6 +174,13 @@
                   {{ g.counts[s.key]|num }}<span
                   class="muted">·{{ (g.counts[s.key] / g.counts['started'] if g.counts['started'] else 0)|pct }}</span></span>
               {% endfor %}
+              {% set undecided = s.n - named %}
+              {% if undecided %}
+                {% set und_base = overall.counts['started'] - (overall_split|sum(attribute='counts.started')) %}
+                <span class="chip-split"><i class="seg-u"></i><b>No degree yet</b>
+                  {{ undecided|num }}<span
+                  class="muted">·{{ (undecided / und_base if und_base else 0)|pct }}</span></span>
+              {% endif %}
             </div>
           {% endif %}
         </div>
