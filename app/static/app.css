@@ -759,3 +759,35 @@ code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11.5px;
    the rail because they are not inside `.rail.split`. */
 .chip-split i.seg-0{background:var(--accent)}
 .chip-split i.seg-1{background:color-mix(in oklab,var(--accent) 42%,var(--accent-fg))}
+
+/* ==================== upload drop zone ====================
+   A <label>, so clicking anywhere opens the native picker and the real
+   <input type=file> stays in the DOM, focusable and submittable. The input is
+   clipped rather than display:none -- display:none would drop it out of the
+   focus order and break keyboard use. Drag-and-drop is layered on top in
+   uploads.html; with JS off this is still just a file picker. */
+.dropzone{position:relative;display:flex;flex-direction:column;align-items:center;
+  justify-content:center;gap:3px;padding:22px 16px;cursor:pointer;
+  border:1.5px dashed var(--ring);border-radius:var(--r-md);
+  background:var(--surface-2);text-align:center;
+  transition:border-color .15s,background .15s}
+.dropzone:hover{border-color:var(--ink-3);background:var(--surface-3)}
+/* Focus lives on the clipped input, so the ring has to be drawn by the label. */
+.dropzone:focus-within{border-color:var(--accent-strong);
+  box-shadow:0 0 0 3px var(--accent-wash)}
+/* Doubled class so the drag state cannot tie with :hover -- the pointer is
+   always over the zone while dragging onto it, so a tie would leave the two
+   states looking the same and there'd be no "yes, drop here" feedback. */
+.dropzone.over.over{border-color:var(--accent-strong);border-style:solid;
+  border-width:1.5px;background:var(--accent-wash-2);
+  box-shadow:inset 0 0 0 1px var(--accent-strong)}
+.dz-input{position:absolute;width:1px;height:1px;padding:0;margin:0;
+  overflow:hidden;clip:rect(0 0 0 0);clip-path:inset(50%);white-space:nowrap}
+.dz-main{font:500 13px/1.4 var(--f-ui);color:var(--ink)}
+.dz-sub{font:400 11.5px/1.4 var(--f-ui);color:var(--ink-3)}
+.dz-link{color:var(--accent-strong);text-decoration:underline;
+  text-underline-offset:2px}
+/* Pointer events off so dragging over the text does not fire dragleave on the
+   zone -- the child would become the event target and the counter would drift. */
+.dropzone.over .dz-main,.dropzone.over .dz-sub{pointer-events:none}
+.dz-warn{display:block;margin-top:6px;color:var(--delta-down)}

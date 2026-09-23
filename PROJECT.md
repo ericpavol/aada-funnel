@@ -287,6 +287,27 @@ as the Cost page's attribution/stage tabs) rather than one top-level nav entry
 per page, so the segmented nav doesn't grow unbounded as pages are added —
 adding a page is one entry in `AD_REPORT_PAGES`, not a nav/route change.
 
+### Uploads accept drag-and-drop
+The file field on `/uploads` is a `<label class="dropzone">` wrapping the real
+`<input type="file">`, not a div with a hidden input. That matters: clicking
+anywhere in the zone opens the picker natively, the input stays in the DOM,
+focusable and submittable, and with JS off the page is still a working file
+picker. The input is clipped (`clip-path`), never `display:none`, which would
+drop it out of the focus order.
+
+Drag-and-drop is layered on in `uploads.html`. Two things worth knowing:
+
+* `input.files` is read-only; the only way to write a dropped file into it is a
+  `DataTransfer`. Doing it that way keeps the plain multipart POST — the
+  alternative is submitting via `fetch()`, which throws away the no-JS
+  fallback for no gain.
+* A drop **replaces** the selection rather than appending, matching the native
+  picker. Appending would silently keep a file the user thought they'd swapped.
+
+Non-`.xlsx`/`.csv` files are dropped on the floor with a count ("2 file(s)
+ignored"), and a file dropped anywhere else on the page is swallowed so the
+browser doesn't navigate away to it and lose the form.
+
 ## Analytical decisions worth not re-litigating
 
 - **Fiscal year is 1 Sept → 31 Aug**, and a date filter on app start date is

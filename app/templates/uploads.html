@@ -49,12 +49,22 @@
         <span class="eyebrow">Files</span>
         {# `multiple`: a monthly refresh is usually several exports at once, and
            the old one-at-a-time form meant re-picking the type five times. #}
-        <input type="file" name="files" accept=".xlsx,.csv" required multiple
-               id="fileInput" aria-label="Export files">
+        {# A <label> wrapper, not a div: clicking anywhere in the zone opens the
+           picker natively, and the real <input> stays in the DOM and focusable,
+           so keyboard and screen-reader use are unchanged and the form still
+           works with JS off. Drag-and-drop is the enhancement on top. #}
+        <label class="dropzone" for="fileInput" id="dropZone">
+          <input type="file" name="files" accept=".xlsx,.csv" required multiple
+                 id="fileInput" aria-label="Export files" class="dz-input">
+          <span class="dz-main">Drag files here</span>
+          <span class="dz-sub">or <span class="dz-link">browse</span> ·
+            .xlsx and .csv</span>
+        </label>
         {# The native control truncates long names to "Ping Data - 2 Y...xlsx",
            which is unreadable when the only difference between two exports is
            the date stamp. List them in full instead. #}
         <ul class="filelist" id="fileList" hidden></ul>
+        <span class="hint dz-warn" id="dzWarn" hidden></span>
       </div>
       <div class="field">
         <span class="eyebrow">Spend belongs to</span>
@@ -97,8 +107,10 @@
 
     var input = document.getElementById("fileInput");
     var list = document.getElementById("fileList");
+    var zone = document.getElementById("dropZone");
     if (!input || !list) return;
-    input.addEventListener("change", function () {
+
+    function render() {
       var files = Array.prototype.slice.call(input.files || []);
       list.innerHTML = "";
       list.hidden = !files.length;
@@ -113,6 +125,66 @@
         size.textContent = kb;
         li.appendChild(size);
         list.appendChild(li);
+      });
+    }
+    input.addEventListener("change", render);
+
+    // Drag and drop. DataTransfer is how you write to input.files -- the
+    // property is otherwise read-only, and assigning the drop's own list
+    // directly does not work. Without this the form would have to be
+    // submitted by fetch(), which would lose the plain-POST fallback.
+    if (!zone || typeof DataTransfer === "undefined") return;
+
+    var ACCEPT = /\.(xlsx|csv)$/i;
+    var depth = 0;   // dragenter/leave fire per child element, so count them
+
+    function stop(e) { e.preventDefault(); e.stopPropagation(); }
+
+    ["dragenter", "dragover"].forEach(function (ev) {
+      zone.addEventListener(ev, function (e) {
+        stop(e);
+        e.dataTransfer.dropEffect = "copy";
+        if (ev === "dragenter") depth++;
+        zone.classList.add("over");
+      });
+    });
+    zone.addEventListener("dragleave", function (e) {
+      stop(e);
+      depth = Math.max(0, depth - 1);
+      if (!depth) zone.classList.remove("over");
+    });
+
+    zone.addEventListener("drop", function (e) {
+      stop(e);
+      depth = 0;
+      zone.classList.remove("over");
+
+      var dropped = Array.prototype.slice.call(e.dataTransfer.files || []);
+      var ok = dropped.filter(function (f) { return ACCEPT.test(f.name); });
+      var rejected = dropped.length - ok.length;
+
+      // Dropping REPLACES the selection rather than appending, matching what
+      // the native picker does -- an append would silently keep a file the
+      // user thought they had swapped out.
+      var dt = new DataTransfer();
+      ok.forEach(function (f) { dt.items.add(f); });
+      input.files = dt.files;
+      render();
+
+      var warn = document.getElementById("dzWarn");
+      if (warn) {
+        warn.hidden = !rejected;
+        warn.textContent = rejected
+          ? rejected + " file(s) ignored — only .xlsx and .csv are read."
+          : "";
+      }
+    });
+
+    // A file dropped ANYWHERE else would otherwise make the browser navigate
+    // away to it, losing the form.
+    ["dragover", "drop"].forEach(function (ev) {
+      document.addEventListener(ev, function (e) {
+        if (!zone.contains(e.target)) e.preventDefault();
       });
     });
   })();
