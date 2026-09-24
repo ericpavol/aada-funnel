@@ -366,9 +366,10 @@ total is the stage's own headcount, never a sum of the rows (any-touch rows
 overlap). No UTM is essential context, not a footnote: on real data untracked
 Started fell **371 → 93** (66% of last year's group, 18% of this year's) while
 every tracked channel rose. So "every channel is up but the total is down" is
-mostly *better tracking*, not more people from those channels. Its delta is
-drawn in neutral ink, not red: fewer untracked people is an improvement, and
-red would say the opposite.
+mostly *better tracking*, not more people from those channels. Its delta uses the
+same red/green rule as every other row (Eric, 2026-09-24): a drop reads red.
+That was a deliberate call over drawing it neutral — the note under the panel
+carries the "fewer untracked = better tracking" reading instead.
 
 Each pace line ends in its **final value drawn on the chart**, pushed apart when
 the two finish close together (the common case in a close year). This year's

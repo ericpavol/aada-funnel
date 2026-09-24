@@ -305,12 +305,6 @@
               <span class="ycd">
                 {% if c.delta is none %}
                   <span class="na">new</span>
-                {% elif c.is_no_utm %}
-                  {# Neutral on purpose: FEWER untracked people means better
-                     tracking, so red would read as "bad" when it is the
-                     opposite, and green would read as "more people". #}
-                  <span class="neutral" title="Fewer untracked people means more of them carry a UTM — a tracking change, not a change in how many applied.">{{
-                    '+' if c.diff >= 0 else '' }}{{ (c.delta * 100)|round(0)|int }}%</span>
                 {% else %}
                   <span class="{{ 'up' if c.diff >= 0 else 'down' }}">{{
                     '+' if c.diff >= 0 else '' }}{{ (c.delta * 100)|round(0)|int }}%</span>
