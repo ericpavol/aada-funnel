@@ -51,7 +51,7 @@ Summer: 4,483 → 954 → 387.
 FY 2025/26 paid media: **$288,357** (Google $140,222 · Meta $148,135).
 Blended first-touch cost per started app ≈ **$51**.
 
-**88 tests** pass against the real sample files. If a change moves any canonical
+**89 tests** pass against the real sample files. If a change moves any canonical
 number above, that is a regression until proven otherwise.
 
 ---
@@ -360,6 +360,15 @@ its final value equals that stage's funnel row — a test pins the agreement.
 the Cost card uses (`SELECT DISTINCT channel FROM spend`). No list to maintain:
 TikTok, Microsoft and ChatGPT ads will be marked paid the moment their spend
 files land.
+
+The channel panel always ends with a **No UTM** row and a bold **total**. The
+total is the stage's own headcount, never a sum of the rows (any-touch rows
+overlap). No UTM is essential context, not a footnote: on real data untracked
+Started fell **371 → 93** (66% of last year's group, 18% of this year's) while
+every tracked channel rose. So "every channel is up but the total is down" is
+mostly *better tracking*, not more people from those channels. Its delta is
+drawn in neutral ink, not red: fewer untracked people is an improvement, and
+red would say the opposite.
 
 Each pace line ends in its **final value drawn on the chart**, pushed apart when
 the two finish close together (the common case in a close year). This year's

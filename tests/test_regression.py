@@ -2102,3 +2102,26 @@ def test_yoy_channels_mark_paid_from_the_spend_table_not_a_list(ft_db):
                                 limit=99, paid=["Google (Paid)"])
     flagged = {r["channel"] for r in rows if r["paid"]}
     assert flagged <= {"Google (Paid)"}
+
+
+def test_yoy_channels_always_carry_the_untracked_row(ft_db):
+    """Without the No UTM row every channel can read "up" while the total is
+    down -- what moved was tracking coverage. It must be present, last, and
+    never cut by `limit`."""
+    conn, prog = ft_db, programs.get("ft")
+    through = conn.execute("SELECT MAX(started_date) FROM applicants"
+                           " WHERE program='ft' AND started_date<>''").fetchone()[0]
+    lo, hi = filters.fiscal_range(filters.fiscal_year_of(through))
+    flt = filters.Filters(prog, date_field="started_date", date_from=lo, date_to=hi)
+    res = metrics.yoy_funnel(conn, prog, flt, "2099-01-01")
+    for stage in prog.stage_dates:
+        rows = metrics.yoy_channels(conn, prog, flt, res["current"], res["prior"],
+                                    stage=stage, limit=1)
+        assert rows[-1]["is_no_utm"] is True
+        assert rows[-1]["channel"] == taxonomy.NO_UTM
+        assert sum(1 for r in rows if r["is_no_utm"]) == 1
+        # Tracked + untracked people never exceed the stage headcount's
+        # untracked share: untracked alone must fit inside the total.
+        total = {r["key"]: r for r in res["rows"]}[stage]
+        assert rows[-1]["current"] <= total["current"]
+        assert rows[-1]["prior"] <= total["prior"]

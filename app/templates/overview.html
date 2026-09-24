@@ -297,14 +297,20 @@
           <span class="hint"><i class="paiddot"></i> paid</span>
         </div>
         <div class="ychans">
+          {% set top = yoy.channels|map(attribute='current')|max %}
           {% for c in yoy.channels %}
-            {% set top = yoy.channels|map(attribute='current')|max %}
-            <div class="ychan">
+            <div class="ychan{{ ' nou' if c.is_no_utm else '' }}">
               <span class="ycn">{% if c.paid %}<i class="paiddot" title="Has media spend uploaded"></i>{% endif %}{{ c.channel }}</span>
               <span class="ycbar"><i style="width:{{ (c.current / top * 100)|round(1) if top else 0 }}%"></i></span>
               <span class="ycd">
                 {% if c.delta is none %}
                   <span class="na">new</span>
+                {% elif c.is_no_utm %}
+                  {# Neutral on purpose: FEWER untracked people means better
+                     tracking, so red would read as "bad" when it is the
+                     opposite, and green would read as "more people". #}
+                  <span class="neutral" title="Fewer untracked people means more of them carry a UTM — a tracking change, not a change in how many applied.">{{
+                    '+' if c.diff >= 0 else '' }}{{ (c.delta * 100)|round(0)|int }}%</span>
                 {% else %}
                   <span class="{{ 'up' if c.diff >= 0 else 'down' }}">{{
                     '+' if c.diff >= 0 else '' }}{{ (c.delta * 100)|round(0)|int }}%</span>
@@ -313,7 +319,31 @@
               <span class="ycv">{{ c.prior|num }} → {{ c.current|num }}</span>
             </div>
           {% endfor %}
+
+          {# The total is the stage's headcount, NOT a sum of the rows above:
+             any-touch rows overlap, one person can touch several channels. #}
+          {% set sr = yoy.stage_row %}
+          <div class="ychan ytotal">
+            <span class="ycn">All people reaching {{ yoy.stage_label|lower }}</span>
+            <span></span>
+            <span class="ycd">
+              {% if sr.delta is not none %}
+                <span class="{{ 'up' if sr.diff >= 0 else 'down' }}">{{
+                  '+' if sr.diff >= 0 else '' }}{{ (sr.delta * 100)|round(0)|int }}%</span>
+              {% endif %}
+            </span>
+            <span class="ycv">{{ sr.prior|num }} → {{ sr.current|num }}</span>
+          </div>
         </div>
+        <p class="hint" style="margin-top:8px">Channels overlap — one person can
+          touch several — so the rows add up to more than the total.
+          {% set us = yoy.untracked_share %}
+          {% if us[0] is not none and us[1] is not none %}
+            <b>{{ (us[1] * 100)|round(0)|int }}%</b> of last year's group had no
+            UTM at all, against <b>{{ (us[0] * 100)|round(0)|int }}%</b> this year,
+            so part of every channel's rise is better tracking rather than more
+            people.
+          {% endif %}</p>
       </div>
     </div>
 

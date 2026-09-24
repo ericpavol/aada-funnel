@@ -297,16 +297,33 @@ def yoy_channels(conn, program, flt, cur, prior, field="started_date",
             params + [hi]).fetchall()
         return {r["c"]: r["n"] for r in rows}
 
+    def untracked(lo, hi):
+        where, params = _cohort(flt, field, lo, hi)
+        return conn.execute(
+            "SELECT COUNT(*) FROM applicants WHERE %s AND %s <> '' AND %s <= ?"
+            " AND NOT EXISTS (SELECT 1 FROM pings p WHERE p.applicant_id = applicants.id)"
+            % (where, datecol, datecol), params + [hi]).fetchone()[0]
+
     now, was = pull(*cur), pull(*prior)
     out = []
     for name in set(now) | set(was):
         c, p = now.get(name, 0), was.get(name, 0)
         out.append({"channel": name, "current": c, "prior": p,
                     "delta": (c - p) / p if p else None, "diff": c - p,
-                    "paid": name in paid,
+                    "paid": name in paid, "is_no_utm": False,
                     "colour_index": taxonomy.channel_slot(name)})
     out.sort(key=lambda r: -max(r["current"], r["prior"]))
-    return out[:limit]
+    out = out[:limit]
+
+    # People with no UTM at all. Always kept, always last, never cut by
+    # `limit`: without it every channel can read "up" while the total is down,
+    # because the thing that actually moved was tracking coverage. On real data
+    # untracked Started fell 371 -> 93 while every tracked channel rose.
+    c, p = untracked(*cur), untracked(*prior)
+    out.append({"channel": taxonomy.NO_UTM, "current": c, "prior": p,
+                "delta": (c - p) / p if p else None, "diff": c - p,
+                "paid": False, "is_no_utm": True, "colour_index": None})
+    return out
 
 
 def build_matrix(program, applicants, flags, pings_by_app, touch="any"):

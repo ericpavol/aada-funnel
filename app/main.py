@@ -409,6 +409,14 @@ def overview(request: Request):
             yoy["channels"] = metrics.yoy_channels(
                 conn, program, flt, yoy["current"], yoy["prior"], yoy["field"],
                 stage=ys, paid=paid)
+            # The honest total is the stage's own headcount, never a sum of the
+            # channel rows -- any-touch rows overlap.
+            yoy["stage_row"] = next(r for r in yoy["rows"] if r["key"] == ys)
+            nou = yoy["channels"][-1]
+            sr = yoy["stage_row"]
+            yoy["untracked_share"] = (
+                nou["current"] / sr["current"] if sr["current"] else None,
+                nou["prior"] / sr["prior"] if sr["prior"] else None)
         # AOS vs BFA beside the headline funnel. Blank-degree rows are
         # excluded, so these two do not sum to `overall` -- see funnel_by.
         overall_split = (metrics.funnel_by(program, apps, flags, "degree",
