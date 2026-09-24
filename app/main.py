@@ -401,22 +401,41 @@ def overview(request: Request):
             paid = [r["channel"] for r in conn.execute(
                 "SELECT DISTINCT channel FROM spend WHERE program=?", (program.key,))]
             yoy["stage"] = ys
-            yoy["stage_label"] = program.stage_labels[ys]
+            yoy["default_stage"] = program.stage_keys[0]
             yoy["stage_opts"] = metrics.yoy_stage_options(program)
-            yoy["pace"] = metrics.yoy_pace(
-                conn, program, flt, yoy["current"], yoy["prior"], yoy["field"],
-                stage=ys)
-            yoy["channels"] = metrics.yoy_channels(
-                conn, program, flt, yoy["current"], yoy["prior"], yoy["field"],
-                stage=ys, paid=paid)
-            # The honest total is the stage's own headcount, never a sum of the
-            # channel rows -- any-touch rows overlap.
-            yoy["stage_row"] = next(r for r in yoy["rows"] if r["key"] == ys)
-            nou = yoy["channels"][-1]
-            sr = yoy["stage_row"]
-            yoy["untracked_share"] = (
-                nou["current"] / sr["current"] if sr["current"] else None,
-                nou["prior"] / sr["prior"] if sr["prior"] else None)
+            # EVERY pace-able stage ships with the page, so the picker switches
+            # in the browser instead of reloading -- the house rule for any
+            # in-section control (see PROJECT.md). It is two stages of a few
+            # hundred numbers each; there was never a payload reason to reload.
+            yoy["by_stage"] = {}
+            for key in program.stage_keys:
+                if key not in program.stage_dates:
+                    continue
+                pace = metrics.yoy_pace(
+                    conn, program, flt, yoy["current"], yoy["prior"], yoy["field"],
+                    stage=key)
+                chans = metrics.yoy_channels(
+                    conn, program, flt, yoy["current"], yoy["prior"], yoy["field"],
+                    stage=key, paid=paid)
+                # The honest total is the stage's own headcount, never a sum of
+                # the channel rows -- any-touch rows overlap.
+                row = next(r for r in yoy["rows"] if r["key"] == key)
+                nou = chans[-1]
+                yoy["by_stage"][key] = {
+                    "label": program.stage_labels[key], "pace": pace,
+                    "channels": chans, "stage_row": row,
+                    "untracked_share": (
+                        nou["current"] / row["current"] if row["current"] else None,
+                        nou["prior"] / row["prior"] if row["prior"] else None),
+                }
+            cy, py = yoy["current"][0][:4], yoy["prior"][0][:4]
+            yoy["pace_payload"] = {
+                "curLabel": "FY %s/%s" % (cy, str(int(cy) + 1)[2:]),
+                "priLabel": "FY %s/%s" % (py, str(int(py) + 1)[2:]),
+                "stages": {k: {"cur": v["pace"]["current"], "pri": v["pace"]["prior"],
+                               "stage": v["label"]}
+                           for k, v in yoy["by_stage"].items()},
+            }
         # AOS vs BFA beside the headline funnel. Blank-degree rows are
         # excluded, so these two do not sum to `overall` -- see funnel_by.
         overall_split = (metrics.funnel_by(program, apps, flags, "degree",

@@ -51,7 +51,7 @@ Summer: 4,483 → 954 → 387.
 FY 2025/26 paid media: **$288,357** (Google $140,222 · Meta $148,135).
 Blended first-touch cost per started app ≈ **$51**.
 
-**89 tests** pass against the real sample files. If a change moves any canonical
+**90 tests** pass against the real sample files. If a change moves any canonical
 number above, that is a regression until proven otherwise.
 
 ---
@@ -380,6 +380,34 @@ Also in the section: a cumulative **pace** chart indexed by day offset so the tw
 years overlay, and per-channel deltas. A near-empty prior window is flagged
 rather than reported as growth — the first year with data otherwise shows
 "+3473%", which is a statement about upload history, not marketing.
+
+### House rule: a section's own filter never reloads the page
+Eric, 2026-09-24, as a standing rule: **any control that changes only one
+section — a stage chip, a tab, a toggle — switches in place, from data already
+on the page.** A reload is slow and throws away the scroll position.
+
+How that is done here, every time:
+
+* Precompute every option server-side and ship it with the page — a JSON
+  payload for charts, pre-rendered `hidden` blocks for HTML.
+* Keep the real `href` on each option. It is the no-JS fallback and the
+  shareable URL; the click handler `preventDefault`s it and calls
+  `syncStageUrl` so the address bar stays in step with what is on screen.
+* Copy an existing pattern rather than inventing one: `wireStagePicks`
+  (channel-card stages), the cost chips (`costChart`), `registerPicker`
+  (series pickers), `wireYoyPick` (YoY stage).
+
+The page-wide filter bar (fiscal year pills, Add filter) is the one intended
+exception — it changes every section at once, so a reload is the honest model.
+
+**Audited 2026-09-24** by clicking each control and checking whether the page
+survived. Instant: both channel-card stage pickers, cost chips on the overview
+and on `/cost`, the series pickers, and (after this change) the YoY stage chips.
+**Still reloading, and next to fix: the tag-timeline controls** — bucket,
+measure, the apps band toggle, and the year picker. That one is bigger: 3
+buckets x 2 measures x any mix of years, plus the timeline chart code. There is
+a test (`test_yoy_page_ships_every_stage_so_the_picker_never_reloads`) that
+fails if the YoY section stops shipping every stage.
 
 ## Analytical decisions worth not re-litigating
 

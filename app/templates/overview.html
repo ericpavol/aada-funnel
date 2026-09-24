@@ -261,14 +261,17 @@
       submitted <b>by this point</b> in each year. Applicants often submit weeks
       or months after starting, so both years' figures will keep rising.</p>
 
-    {# ---- stage picker: drives the pace chart AND the channel panel ---- #}
-    <div class="stagebar yoypick">
+    {# ---- stage picker: drives the pace chart AND the channel panel ----
+       Every pace-able stage is rendered below and ships in the chart payload,
+       so a click switches in place (app.js wireYoyPick). The hrefs stay as the
+       no-JS fallback and as the shareable URL. #}
+    <div class="stagebar yoypick" data-yspick data-default="{{ yoy.default_stage }}">
       <span class="eyebrow">Pace &amp; channels for</span>
       <div class="tabsm">
         {% for o in yoy.stage_opts %}
           {% if o.available %}
-            <a class="{{ 'on' if o.key == yoy.stage else '' }}"
-               href="?{{ qs_set(request, 'ys', none if o.key == program.stage_keys[0] else o.key) }}#yoy">{{ o.label }}</a>
+            <a class="{{ 'on' if o.key == yoy.stage else '' }}" data-ys="{{ o.key }}"
+               href="?{{ qs_set(request, 'ys', none if o.key == yoy.default_stage else o.key) }}#yoy">{{ o.label }}</a>
           {% else %}
             <span class="off" title="Slate sends no date for {{ o.label }} — only whether it happened, not when — so it cannot be paced day by day yet. It turns on automatically once the date is in the export.">{{ o.label }}</span>
           {% endif %}
@@ -278,27 +281,31 @@
 
     <div class="yoysplit">
       <div>
-        <div class="yoystat">
-          <span class="eyebrow">Pace · cumulative {{ yoy.stage_label|lower }}</span>
-          <span class="ystat">
-            <b>{{ yoy.pace.current_final|num }}</b>
-            <span class="pale">vs {{ yoy.pace.prior_final|num }}</span>
-            {% if yoy.pace.delta is not none %}
-              <span class="{{ 'up' if yoy.pace.current_final >= yoy.pace.prior_final else 'down' }}">{{
-                '+' if yoy.pace.current_final >= yoy.pace.prior_final else '' }}{{ (yoy.pace.delta * 100)|round(0)|int }}%</span>
-            {% endif %}
-          </span>
-        </div>
+        {% for key, st in yoy.by_stage.items() %}
+          <div class="yoystat" data-ysblock="{{ key }}"{{ '' if key == yoy.stage else ' hidden' }}>
+            <span class="eyebrow">Pace · cumulative {{ st.label|lower }}</span>
+            <span class="ystat">
+              <b>{{ st.pace.current_final|num }}</b>
+              <span class="pale">vs {{ st.pace.prior_final|num }}</span>
+              {% if st.pace.delta is not none %}
+                <span class="{{ 'up' if st.pace.current_final >= st.pace.prior_final else 'down' }}">{{
+                  '+' if st.pace.current_final >= st.pace.prior_final else '' }}{{ (st.pace.delta * 100)|round(0)|int }}%</span>
+              {% endif %}
+            </span>
+          </div>
+        {% endfor %}
         <div class="chartbox sm"><canvas id="yoyPace"></canvas></div>
       </div>
-      <div>
+
+      {% for key, st in yoy.by_stage.items() %}
+      <div data-ysblock="{{ key }}"{{ '' if key == yoy.stage else ' hidden' }}>
         <div class="yoystat">
-          <span class="eyebrow">Channels · people reaching {{ yoy.stage_label|lower }}</span>
+          <span class="eyebrow">Channels · people reaching {{ st.label|lower }}</span>
           <span class="hint"><i class="paiddot"></i> paid</span>
         </div>
         <div class="ychans">
-          {% set top = yoy.channels|map(attribute='current')|max %}
-          {% for c in yoy.channels %}
+          {% set top = st.channels|map(attribute='current')|max %}
+          {% for c in st.channels %}
             <div class="ychan{{ ' nou' if c.is_no_utm else '' }}">
               <span class="ycn">{% if c.paid %}<i class="paiddot" title="Has media spend uploaded"></i>{% endif %}{{ c.channel }}</span>
               <span class="ycbar"><i style="width:{{ (c.current / top * 100)|round(1) if top else 0 }}%"></i></span>
@@ -316,9 +323,9 @@
 
           {# The total is the stage's headcount, NOT a sum of the rows above:
              any-touch rows overlap, one person can touch several channels. #}
-          {% set sr = yoy.stage_row %}
+          {% set sr = st.stage_row %}
           <div class="ychan ytotal">
-            <span class="ycn">All people reaching {{ yoy.stage_label|lower }}</span>
+            <span class="ycn">All people reaching {{ st.label|lower }}</span>
             <span></span>
             <span class="ycd">
               {% if sr.delta is not none %}
@@ -331,7 +338,7 @@
         </div>
         <p class="hint" style="margin-top:8px">Channels overlap — one person can
           touch several — so the rows add up to more than the total.
-          {% set us = yoy.untracked_share %}
+          {% set us = st.untracked_share %}
           {% if us[0] is not none and us[1] is not none %}
             <b>{{ (us[1] * 100)|round(0)|int }}%</b> of last year's group had no
             UTM at all, against <b>{{ (us[0] * 100)|round(0)|int }}%</b> this year,
@@ -339,6 +346,7 @@
             people.
           {% endif %}</p>
       </div>
+      {% endfor %}
     </div>
 
   {% endif %}
@@ -666,11 +674,7 @@
 </details>
 
 <script>
-  {% if yoy %}AADA.yoyPaceChart({{ {
-    'cur': yoy.pace.current, 'pri': yoy.pace.prior, 'stage': yoy.stage_label,
-    'curLabel': 'FY ' ~ yoy.current[0][:4] ~ '/' ~ ((yoy.current[0][:4]|int + 1)|string)[2:],
-    'priLabel': 'FY ' ~ yoy.prior[0][:4] ~ '/' ~ ((yoy.prior[0][:4]|int + 1)|string)[2:]
-  }|tojson }});{% endif %}
+  {% if yoy %}AADA.yoyPaceChart({{ yoy.pace_payload|tojson }}, {{ yoy.stage|tojson }}, {{ yoy.default_stage|tojson }});{% endif %}
   AADA.comparisonChart({{ chart_comparison|tojson }}, {{ comparison.baseline_rate|tojson }},
                        {{ comparison.final_label|tojson }});
   AADA.makeupChart({{ chart_makeup|tojson }}, {{ makeup.final_total|tojson }},

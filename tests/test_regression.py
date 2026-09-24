@@ -2125,3 +2125,33 @@ def test_yoy_channels_always_carry_the_untracked_row(ft_db):
         total = {r["key"]: r for r in res["rows"]}[stage]
         assert rows[-1]["current"] <= total["current"]
         assert rows[-1]["prior"] <= total["prior"]
+
+
+def test_yoy_page_ships_every_stage_so_the_picker_never_reloads(tmp_path, monkeypatch):
+    """House rule: an in-section control switches in place, from data already
+    on the page. So the rendered overview must carry a stat block, a channel
+    block and pace series for EVERY pace-able stage -- not just the selected
+    one -- or the only way to change stage would be a reload."""
+    import json, re
+    from starlette.testclient import TestClient
+    from app import main as _main
+
+    dbpath = str(tmp_path / "yoy.db")
+    conn = db.connect(dbpath)
+    ingest.ingest(conn, FT_FILE, "ft", "ft.xlsx", "")
+    through = conn.execute("SELECT MAX(started_date) FROM applicants"
+                           " WHERE program='ft' AND started_date<>''").fetchone()[0]
+    conn.close()
+    monkeypatch.setattr(_main, "DB_PATH", dbpath)
+
+    fy = filters.fiscal_year_of(through)
+    body = TestClient(_main.app).get("/?program=ft&dates=%d" % fy).text
+    prog = programs.get("ft")
+    for key in prog.stage_dates:
+        # stat block + channel block for each stage, whichever is selected
+        assert body.count('data-ysblock="%s"' % key) == 2, key
+        assert 'data-ys="%s"' % key in body, key
+    m = re.search(r'AADA\.yoyPaceChart\((\{.*\}), "[a-z_]+", "[a-z_]+"\);', body)
+    assert m, "pace payload not found"
+    stages = json.loads(m.group(1))["stages"]
+    assert set(stages) == set(prog.stage_dates)

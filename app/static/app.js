@@ -656,7 +656,49 @@
    * Each line ends in its final value, drawn on the chart, so the headline
    * numbers need no hover. The two labels are pushed apart when the lines
    * finish close together, which is the COMMON case in a close year. */
-  function yoyPaceChart(data) {
+  var YOY = { payload: null, stage: null, defaultStage: null, wired: false };
+
+  /* Every pace-able stage ships with the page, so the "Pace & channels for"
+   * chips switch in place: redraw this chart from the payload, show the
+   * matching pre-rendered stat + channel block, and keep the URL in step so a
+   * copied link and a reload land on the same stage. The chips' hrefs are the
+   * no-JS fallback. House rule: an in-section control never reloads the page. */
+  function yoyPaceChart(payload, stage, defaultStage) {
+    YOY.payload = payload;
+    YOY.stage = stage;
+    YOY.defaultStage = defaultStage;
+    drawYoyPace();
+    wireYoyPick();
+  }
+
+  function wireYoyPick() {
+    if (YOY.wired) return;
+    var bar = document.querySelector("[data-yspick]");
+    if (!bar) return;
+    YOY.wired = true;
+    bar.addEventListener("click", function (ev) {
+      var a = ev.target.closest("a[data-ys]");
+      if (!a) return;
+      var key = a.getAttribute("data-ys");
+      if (!YOY.payload.stages[key]) return;   // unknown stage: let the link navigate
+      ev.preventDefault();
+      if (key === YOY.stage) return;
+      YOY.stage = key;
+      bar.querySelectorAll("a[data-ys]").forEach(function (n) {
+        n.classList.toggle("on", n.getAttribute("data-ys") === key);
+      });
+      document.querySelectorAll("[data-ysblock]").forEach(function (n) {
+        n.hidden = n.getAttribute("data-ysblock") !== key;
+      });
+      drawYoyPace();
+      syncStageUrl("ys", key, YOY.defaultStage);
+    });
+  }
+
+  function drawYoyPace() {
+    var st = YOY.payload.stages[YOY.stage];
+    var data = { cur: st.cur, pri: st.pri, stage: st.stage,
+                 curLabel: YOY.payload.curLabel, priLabel: YOY.payload.priLabel };
     var yoyEndLabels = {
       id: "yoyEndLabels",
       afterDatasetsDraw: function (chart) {
