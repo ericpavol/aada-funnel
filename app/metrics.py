@@ -648,7 +648,7 @@ def timeline_facets(conn, program):
 
 def tag_timeline(conn, program, where_sql, params, picked=None, years=None,
                  bucket="week", measure="tags", max_series=8, select_none=False,
-                 cap=True):
+                 cap=True, year_detail=False):
     """`cap=False` returns EVERY entity, uncapped, each carrying a canonical
     `rank`. That is the client payload: the browser slices the first N of what
     is ticked, by rank, so which-8-survive and their colours stay decided by the
@@ -742,6 +742,7 @@ def tag_timeline(conn, program, where_sql, params, picked=None, years=None,
     totals = defaultdict(int)       # grp -> total, to rank series
     cells = defaultdict(dict)       # (grp, fyear) -> {bkt: value}
     approx_total = 0
+    approx_by_year = defaultdict(int)
     years_seen = set()
     for r in rows:
         if r["bkt"] is None or not (0 <= r["bkt"] < n_buckets):
@@ -750,6 +751,7 @@ def tag_timeline(conn, program, where_sql, params, picked=None, years=None,
         cells[key][r["bkt"]] = r[value_key]
         totals[r["grp"]] += r[value_key]
         approx_total += r["approx"] or 0
+        approx_by_year[r["fyear"]] += r["approx"] or 0
         years_seen.add(r["fyear"])
 
     ranked = [g for g, _ in sorted(totals.items(), key=lambda kv: -kv[1])]
@@ -806,7 +808,46 @@ def tag_timeline(conn, program, where_sql, params, picked=None, years=None,
             })
     series.sort(key=lambda s: (-s["fy"], -s["total"]))
 
+    detail = None
+    if year_detail:
+        # What the browser needs to recompute the headline for ANY subset of
+        # years without asking the server again (the year chips switch in
+        # place -- see PROJECT.md, "section filters never reload").
+        #
+        # Tags and the timestamp-fallback count add up across years, so a
+        # per-year figure is enough. DISTINCT PEOPLE does not add up: one
+        # person active in two years is one person, and summing would count
+        # them twice. So each person is reduced to the set of years they
+        # appear in, encoded as a bitmask over `year_index`, and only the count
+        # per mask ships. For a chosen subset S the headcount is the sum over
+        # every mask that shares a bit with S -- exact, and a handful of
+        # numbers however many people there are.
+        per_year_tags = {r["fyear"]: r["tags"] for r in conn.execute(
+            cte + " SELECT fyear, COUNT(*) AS tags FROM fy WHERE " +
+            " AND ".join(head_where) + " GROUP BY fyear", head_args)}
+        year_index = sorted(set(per_year_tags) | years_seen)
+        bit = {y: 1 << i for i, y in enumerate(year_index)}
+        masks = defaultdict(int)
+        for r in conn.execute(
+                cte + " SELECT applicant_id, GROUP_CONCAT(DISTINCT fyear) AS ys"
+                " FROM fy WHERE " + " AND ".join(head_where) +
+                " GROUP BY applicant_id", head_args):
+            m = 0
+            for y in (r["ys"] or "").split(","):
+                if y:
+                    m |= bit.get(int(y), 0)
+            if m:
+                masks[m] += 1
+        detail = {
+            "year_index": year_index,
+            "by_year": {y: {"tags": per_year_tags.get(y, 0),
+                            "approx": approx_by_year.get(y, 0)}
+                        for y in year_index},
+            "people_masks": {str(m): n for m, n in masks.items()},
+        }
+
     return {
+        "year_detail": detail,
         "labels": _tl_labels(bucket),
         "series": series,
         "bucket": bucket, "measure": measure,
@@ -825,6 +866,38 @@ def tag_timeline(conn, program, where_sql, params, picked=None, years=None,
         "headline": (head["tags"] or 0) if measure == "tags" else (head["people"] or 0),
         "headline_unit": "tags" if measure == "tags" else "people",
         "measure_label": TL_MEASURES[measure],
+    }
+
+
+def timeline_payload(conn, program, where_sql, params, bucket="week",
+                     measure="tags"):
+    """Everything the browser needs to redraw the tag timeline for ONE
+    bucket x measure, across EVERY fiscal year, with no further requests.
+
+    Every year ships, rather than just the ones ticked, so the year chips
+    switch in place. Each entity carries its lines per year and the browser
+    re-ranks from the ticked years' totals, which is exactly how the server
+    ranks (`tag_timeline`: volume desc, ties in name order). `started` is the
+    applications-started band for the same bucket, also every year.
+    """
+    tl = tag_timeline(conn, program, where_sql, params, cap=False,
+                      bucket=bucket, measure=measure, year_detail=True)
+    ents = {}
+    for sv in tl["series"]:
+        e = ents.setdefault(sv["group"], {"name": sv["group"],
+                                          "torder": sv["torder"], "lines": []})
+        e["lines"].append({"fy": sv["fy"], "fy_label": sv["fy_label"],
+                           "data": sv["data"], "total": sv["total"]})
+    started = started_apps_series(conn, program, where_sql, params, bucket=bucket)
+    detail = tl["year_detail"] or {}
+    return {
+        "bucket": tl["bucket"], "measure": tl["measure"], "labels": tl["labels"],
+        "entities": sorted(ents.values(), key=lambda e: e["torder"]),
+        "year_index": detail.get("year_index", []),
+        "by_year": {str(k): v for k, v in detail.get("by_year", {}).items()},
+        "people_masks": detail.get("people_masks", {}),
+        "started": started["series"],
+        "limit": 8,
     }
 
 

@@ -506,36 +506,43 @@
       <span class="eyebrow">Timing · fiscal year runs 1 Sep → 31 Aug</span>
       <span class="display">When tags <span class="serif-it">land</span></span>
     </span>
+    {# Numbers here are live spans (data-tl=...): the four timeline controls
+       switch in place, so app.js rewrites them instead of the page reloading.
+       The started-apps paragraph is always present and shown/hidden with the
+       band. #}
     {{ tip([
       ('<b>Tag events</b> counts every touch: one person clicking the same ad five times in
         October is <b>5</b> — activity or spend volume. <b>Distinct people</b> counts each
         person once <i>per bucket</i>, so the points do <b>not</b> add up to a headcount:
-        the buckets sum to ' ~ timeline.grand_total|num ~ ' but there are only ' ~
-        timeline.people_unique|num ~ ' actual people.'),
+        the buckets sum to <span data-tl="grand_total">' ~ timeline.grand_total|num ~
+        '</span> but there are only <span data-tl="people_unique">' ~
+        timeline.people_unique|num ~ '</span> actual people.'),
       ('Dated by the <b>tag\'s own timestamp</b> where it has one — 98.5% of Full-Time and
-        99.6% of Summer tags do. The remaining ' ~ timeline.approx|num ~ ' in this view fall
-        back to the applicant\'s <b>app start date</b>.'),
+        99.6% of Summer tags do. The remaining <span data-tl="approx">' ~ timeline.approx|num ~
+        '</span> in this view fall back to the applicant\'s <b>app start date</b>.'),
       ('Colour is the category; the newest fiscal year is solid, earlier years dashed and
         dimmed. Buckets are positions <i>within</i> the fiscal year, which is what lets
         years overlay.'),
-    ] + ([
-      ('<b>Grey band = applications started</b>, on the <b>right-hand axis</b>, scaled
+      ('<span data-tl-show="apps"' ~ ('' if (tl_apps and tl_started) else ' hidden') ~
+        '><b>Grey band = applications started</b>, on the <b>right-hand axis</b>, scaled
         independently — tags outrun starts about 6:1, so on a shared axis the band was a
-        sliver. Compare <b>shape and timing</b>, not heights. ' ~ tl_started.total|num ~
-        ' started in view, peaking at ' ~ tl_started.peak|num ~ ' per ' ~ timeline.bucket ~ '.')
-    ] if (tl_apps and tl_started) else [])) }}
-    <span class="fold-hint fold-hint-open">{{ timeline.headline|num }} {{ timeline.headline_unit }} · click to collapse</span>
-    <span class="fold-hint fold-hint-closed">{{ timeline.headline|num }} {{ timeline.headline_unit }} · click to expand</span>
+        sliver. Compare <b>shape and timing</b>, not heights. <span data-tl="started_total">' ~
+        ((tl_started.total if tl_started else 0)|num) ~ '</span> started in view, peaking at
+        <span data-tl="started_peak">' ~ ((tl_started.peak if tl_started else 0)|num) ~
+        '</span> per <span data-tl="bucket">' ~ timeline.bucket ~ '</span>.</span>'),
+    ]) }}
+    <span class="fold-hint fold-hint-open"><span data-tl="headline">{{ timeline.headline|num }}</span> <span data-tl="headline_unit">{{ timeline.headline_unit }}</span> · click to collapse</span>
+    <span class="fold-hint fold-hint-closed"><span data-tl="headline">{{ timeline.headline|num }}</span> <span data-tl="headline_unit">{{ timeline.headline_unit }}</span> · click to expand</span>
   </summary>
 
   <div class="fold-body">
     <div class="foldnote">
-      <div class="tlbar">
+      <div class="tlbar" data-tlctl>
         <div class="tlgroup">
           <span class="eyebrow">Bucket</span>
           <div class="tabsm">
             {% for k, lbl in tl_buckets.items() %}
-              <a class="{{ 'on' if k == timeline.bucket else '' }}"
+              <a class="{{ 'on' if k == timeline.bucket else '' }}" data-tl-bucket="{{ k }}"
                  href="?{{ qs_with(request, tl_bucket=k) }}#timeline">{{ lbl }}</a>
             {% endfor %}
           </div>
@@ -544,7 +551,7 @@
           <span class="eyebrow">Count</span>
           <div class="tabsm">
             {% for k, lbl in tl_measures.items() %}
-              <a class="{{ 'on' if k == timeline.measure else '' }}"
+              <a class="{{ 'on' if k == timeline.measure else '' }}" data-tl-measure="{{ k }}"
                  title="{{ 'Every tag, so one person clicking five times counts five times — measures activity/volume' if k == 'tags' else 'Each person once per bucket — measures reach' }}"
                  href="?{{ qs_with(request, tl_measure=k) }}#timeline">{{ lbl }}</a>
             {% endfor %}
@@ -553,10 +560,10 @@
         <div class="tlgroup">
           <span class="eyebrow">Reference</span>
           <div class="tabsm">
-            <a class="{{ 'on' if tl_apps else '' }}"
+            <a class="{{ 'on' if tl_apps else '' }}" data-tl-apps
                title="Overlay applications started, on its own right-hand axis"
                href="?{{ qs_with(request, tl_apps=(None if tl_apps else 1)) }}#timeline">
-              {{ 'Hide' if tl_apps else 'Show' }} started apps
+              <span data-tl="apps_word">{{ 'Hide' if tl_apps else 'Show' }}</span> started apps
             </a>
           </div>
         </div>
@@ -564,7 +571,7 @@
           <span class="eyebrow">Fiscal year <span class="hint">(newest is solid)</span></span>
           <div class="tabsm">
             {% for y in tl_all_years %}
-              <a class="{{ 'on' if is_picked(request, 'tl_year', y, tl_all_years) else '' }}{{ ' past' if y != timeline.newest else '' }}"
+              <a class="{{ 'on' if is_picked(request, 'tl_year', y, tl_all_years) else '' }}{{ ' past' if y != timeline.newest else '' }}" data-tl-year="{{ y }}"
                  href="?{{ qs_pick(request, 'tl_year', y, tl_all_years) }}#timeline">FY {{ y }}/{{ '%02d'|format((y + 1) % 100) }}</a>
             {% endfor %}
           </div>
@@ -688,6 +695,7 @@
      re-slices and redraws locally instead of costing a page load. #}
   AADA.wirePickers({{ tl_payload|tojson }}, {{ (tl_started or none)|tojson }},
                    {{ pen_payload|tojson }});
+  AADA.wireTimelineControls({{ tl_client|tojson }});
   {% if cost.has_spend %}AADA.costChart({{ cost_payload|tojson }}, {{ cost_stage|tojson }},
                                        {{ cost_attr|tojson }});{% endif %}
   AADA.wireStagePicks({{ stage_payload|tojson }},

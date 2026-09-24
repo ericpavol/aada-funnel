@@ -1414,8 +1414,20 @@
     if (!p.selected.length) {
       u.set(p.key, "__clear__");
     } else {
-      p.payload.entities.forEach(function (e) {
-        if (p.selected.indexOf(e.name) !== -1) u.append(p.key, e.name);
+      // Every name in the picker's own (tree) order -- NOT just the ones with
+      // data in the current payload. The timeline's year chips narrow the
+      // payload in place, and writing only what is drawable silently dropped a
+      // ticked channel that happened to have nothing in the ticked years, so a
+      // reload or a copied link unticked it. The server keeps the full list
+      // (tl_all), so this matches it.
+      var order = [];
+      p.root.querySelectorAll("[data-row]").forEach(function (n) {
+        var nm = n.getAttribute("data-row");
+        if (order.indexOf(nm) === -1) order.push(nm);
+      });
+      if (!order.length) order = p.payload.entities.map(function (e) { return e.name; });
+      order.forEach(function (nm) {
+        if (p.selected.indexOf(nm) !== -1) u.append(p.key, nm);
       });
     }
     history.replaceState(null, "", location.pathname + "?" + u.toString() + location.hash);
@@ -1456,16 +1468,253 @@
     };
   }
 
+  /* ------------------------------------------------ timeline controls
+   * Bucket, Count, the started-apps band and the fiscal-year chips switch in
+   * place (house rule: a section's own filter never reloads the page).
+   *
+   * The page ships this view's bucket x count with EVERY fiscal year, so the
+   * year chips are instant from first paint. The other five bucket x count
+   * combinations are fetched from /timeline.json in the background just after
+   * load, so they are in hand before anyone clicks; a click that beats the
+   * fetch simply waits for it. If a fetch fails, the click falls back to the
+   * link's own href -- a reload, never a dead control.
+   *
+   * Everything year-dependent is recomputed here exactly as tag_timeline does
+   * it, and a test pins the two against each other for every year subset:
+   *   - which eight lines survive: volume in the ticked years, ties by name;
+   *   - the solid line: the newest ticked year that has data;
+   *   - the headline: tags add up by year, but DISTINCT PEOPLE do not (one
+   *     person in two years is one person), so people come from per-person
+   *     year bitmasks rather than a sum.
+   */
+  var TL_LIVE = { started: null };
+  var TLC = null;
+
+  function tlKey(bucket, measure) { return bucket + "|" + measure; }
+
+  function wireTimelineControls(client) {
+    var bar = document.querySelector("[data-tlctl]");
+    if (!bar || !client || !client.combo || !PICKERS.tl_pick) return;
+    TLC = {
+      combos: {}, pending: {},
+      bucket: client.bucket, measure: client.measure,
+      years: client.years.slice(), allYears: client.all_years.slice(),
+      apps: !!client.apps, buckets: client.buckets, measures: client.measures,
+      defaults: client.defaults, base: location.search
+    };
+    TLC.combos[tlKey(TLC.bucket, TLC.measure)] = client.combo;
+
+    bar.addEventListener("click", function (ev) {
+      var a = ev.target.closest(
+        "a[data-tl-bucket],a[data-tl-measure],a[data-tl-apps],a[data-tl-year]");
+      if (!a) return;
+      ev.preventDefault();
+      var next = { bucket: TLC.bucket, measure: TLC.measure,
+                   years: TLC.years.slice(), apps: TLC.apps };
+      if (a.hasAttribute("data-tl-bucket")) {
+        next.bucket = a.getAttribute("data-tl-bucket");
+      } else if (a.hasAttribute("data-tl-measure")) {
+        next.measure = a.getAttribute("data-tl-measure");
+      } else if (a.hasAttribute("data-tl-apps")) {
+        next.apps = !next.apps;
+      } else {
+        var y = Number(a.getAttribute("data-tl-year"));
+        var i = next.years.indexOf(y);
+        if (i === -1) next.years.push(y); else next.years.splice(i, 1);
+      }
+      tlCombo(next.bucket, next.measure).then(function () {
+        TLC.bucket = next.bucket; TLC.measure = next.measure;
+        TLC.years = next.years; TLC.apps = next.apps;
+        applyTimeline();
+      }, function () { location.href = a.href; });
+    });
+
+    // Warm the other five combinations once the page has painted.
+    setTimeout(function prefetch() {
+      var queue = [];
+      TLC.buckets.forEach(function (b) {
+        TLC.measures.forEach(function (m) { queue.push([b, m]); });
+      });
+      (function next() {
+        var item = queue.shift();
+        if (!item) return;
+        tlCombo(item[0], item[1]).then(next, next);
+      })();
+    }, 600);
+  }
+
+  function tlCombo(bucket, measure) {
+    var k = tlKey(bucket, measure);
+    if (TLC.combos[k]) return Promise.resolve(TLC.combos[k]);
+    if (TLC.pending[k]) return TLC.pending[k];
+    var u = new URLSearchParams(TLC.base);
+    u.set("tl_bucket", bucket);
+    u.set("tl_measure", measure);
+    TLC.pending[k] = fetch("/timeline.json?" + u.toString(),
+                           { credentials: "same-origin" })
+      .then(function (r) {
+        if (!r.ok) throw new Error("timeline " + r.status);
+        return r.json();
+      })
+      .then(function (combo) {
+        TLC.combos[k] = combo;
+        delete TLC.pending[k];
+        return combo;
+      }, function (err) { delete TLC.pending[k]; throw err; });
+    return TLC.pending[k];
+  }
+
+  /** The combo narrowed to the ticked years -> the picker's payload shape. */
+  function tlDerive(combo, years) {
+    var ents = [];
+    combo.entities.forEach(function (e) {
+      var lines = e.lines.filter(function (l) { return years.indexOf(l.fy) !== -1; });
+      if (!lines.length) return;
+      ents.push({ name: e.name, torder: e.torder, lines: lines,
+                  _tot: lines.reduce(function (s, l) { return s + l.total; }, 0) });
+    });
+    var seen = {};
+    ents.forEach(function (e) { e.lines.forEach(function (l) { seen[l.fy] = 1; }); });
+    var yearsSeen = Object.keys(seen).map(Number).sort(function (a, b) { return b - a; });
+    var newest = yearsSeen.length ? yearsSeen[0] : null;
+    ents.forEach(function (e) {
+      e.lines = e.lines.map(function (l) {
+        return { fy: l.fy, fy_label: l.fy_label, data: l.data, total: l.total,
+                 current: l.fy === newest };
+      });
+    });
+    // Volume desc, ties in name order -- tag_timeline's ranking exactly.
+    ents.slice().sort(function (a, b) {
+      return (b._tot - a._tot) || (a.name < b.name ? -1 : a.name > b.name ? 1 : 0);
+    }).forEach(function (e, i) { e.rank = i; });
+    return {
+      labels: combo.labels, bucket: combo.bucket, measure: combo.measure,
+      years: yearsSeen, newest: newest, entities: ents, limit: combo.limit || 8,
+      defaults: ents.filter(function (e) { return e.name.indexOf(" › ") === -1; })
+                    .map(function (e) { return e.name; })
+    };
+  }
+
+  function tlStartedFor(combo, years) {
+    var ser = (combo.started || []).filter(function (s) {
+      return years.indexOf(s.fy) !== -1;
+    });
+    if (!ser.length) return null;
+    var newest = Math.max.apply(null, ser.map(function (s) { return s.fy; }));
+    ser = ser.map(function (s) {
+      return { fy: s.fy, fy_label: s.fy_label, data: s.data, total: s.total,
+               peak: s.peak, current: s.fy === newest };
+    });
+    return {
+      series: ser,
+      total: ser.reduce(function (a, s) { return a + s.total; }, 0),
+      peak: ser.reduce(function (a, s) { return Math.max(a, s.peak); }, 0)
+    };
+  }
+
+  function tlHeadline(combo, years) {
+    var bits = 0;
+    years.forEach(function (y) {
+      var i = combo.year_index.indexOf(y);
+      if (i !== -1) bits |= (1 << i);
+    });
+    var people = 0;
+    Object.keys(combo.people_masks).forEach(function (m) {
+      if (Number(m) & bits) people += combo.people_masks[m];
+    });
+    var tags = 0, approx = 0, grand = 0;
+    years.forEach(function (y) {
+      var b = combo.by_year[String(y)];
+      if (b) { tags += b.tags; approx += b.approx; }
+    });
+    combo.entities.forEach(function (e) {
+      e.lines.forEach(function (l) { if (years.indexOf(l.fy) !== -1) grand += l.total; });
+    });
+    return { people: people, tags: tags, approx: approx, grand: grand };
+  }
+
+  function applyTimeline() {
+    var combo = TLC.combos[tlKey(TLC.bucket, TLC.measure)];
+    var p = PICKERS.tl_pick;
+    var derived = tlDerive(combo, TLC.years);
+    p.payload = derived;                        // the tick selection is kept
+    var started = tlStartedFor(combo, TLC.years);
+    TL_LIVE.started = TLC.apps ? started : null;
+    applyPicker(p);                              // redraws + syncs tl_pick
+
+    var bar = document.querySelector("[data-tlctl]");
+    bar.querySelectorAll("a[data-tl-bucket]").forEach(function (n) {
+      n.classList.toggle("on", n.getAttribute("data-tl-bucket") === TLC.bucket);
+    });
+    bar.querySelectorAll("a[data-tl-measure]").forEach(function (n) {
+      n.classList.toggle("on", n.getAttribute("data-tl-measure") === TLC.measure);
+    });
+    bar.querySelectorAll("a[data-tl-apps]").forEach(function (n) {
+      n.classList.toggle("on", TLC.apps);
+    });
+    bar.querySelectorAll("a[data-tl-year]").forEach(function (n) {
+      var y = Number(n.getAttribute("data-tl-year"));
+      n.classList.toggle("on", TLC.years.indexOf(y) !== -1);
+      n.classList.toggle("past", y !== derived.newest);
+    });
+
+    var h = tlHeadline(combo, TLC.years);
+    var byMeasure = TLC.measure === "tags"
+      ? { n: h.tags, unit: "tags" } : { n: h.people, unit: "people" };
+    var text = {
+      headline: numFmt(byMeasure.n), headline_unit: byMeasure.unit,
+      grand_total: numFmt(h.grand), people_unique: numFmt(h.people),
+      approx: numFmt(h.approx), bucket: TLC.bucket,
+      started_total: numFmt(started ? started.total : 0),
+      started_peak: numFmt(started ? started.peak : 0),
+      apps_word: TLC.apps ? "Hide" : "Show"
+    };
+    document.querySelectorAll("[data-tl]").forEach(function (n) {
+      var k = n.getAttribute("data-tl");
+      if (k in text) n.textContent = text[k];
+    });
+    document.querySelectorAll('[data-tl-show="apps"]').forEach(function (n) {
+      n.hidden = !(TLC.apps && started);
+    });
+    syncTimelineUrl();
+  }
+
+  function syncTimelineUrl() {
+    if (!window.history || !history.replaceState) return;
+    var u = new URLSearchParams(location.search);
+    function put(k, v) { if (v == null) u.delete(k); else u.set(k, v); }
+    put("tl_bucket", TLC.bucket === TLC.defaults.bucket ? null : TLC.bucket);
+    put("tl_measure", TLC.measure === TLC.defaults.measure ? null : TLC.measure);
+    put("tl_apps", TLC.apps ? "1" : null);
+    // Same encoding the server reads (_picked): absent = every year,
+    // "__clear__" = none, otherwise the ticked years in canonical order.
+    u.delete("tl_year");
+    if (!TLC.years.length) {
+      u.append("tl_year", "__clear__");
+    } else if (TLC.years.length !== TLC.allYears.length) {
+      TLC.allYears.forEach(function (y) {
+        if (TLC.years.indexOf(y) !== -1) u.append("tl_year", String(y));
+      });
+    }
+    var qs = u.toString();
+    history.replaceState(null, "", location.pathname + (qs ? "?" + qs : "") + location.hash);
+  }
+
   function wirePickers(tlPayload, tlStarted, penPayload) {
     if (tlPayload) {
       tlPayload.defaults = (tlPayload.entities || [])
         .filter(function (e) { return e.name.indexOf(" › ") === -1; })
         .map(function (e) { return e.name; });
+      TL_LIVE.started = tlStarted;
+      // Reads the picker's CURRENT payload and band rather than the ones it was
+      // created with: the bucket / count / year controls swap both in place.
       registerPicker("tl_pick", tlPayload, function (kept) {
         destroy("tlChart");
         var empty = document.querySelector('[data-empty="tl_pick"]');
         if (empty) empty.hidden = kept.length > 0;
-        if (kept.length) timelineChart(buildTimeline(tlPayload, kept), tlStarted);
+        if (kept.length) {
+          timelineChart(buildTimeline(PICKERS.tl_pick.payload, kept), TL_LIVE.started);
+        }
       });
     }
     if (penPayload) {
@@ -1857,6 +2106,7 @@
     wireCostTable: wireCostTable,
     wireSpendPicker: wireSpendPicker,
     wirePickers: wirePickers,
+    wireTimelineControls: wireTimelineControls,
     wireStagePicks: wireStagePicks,
     comparisonChart: comparisonChart,
     makeupChart: makeupChart,

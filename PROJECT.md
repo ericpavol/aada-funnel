@@ -51,7 +51,7 @@ Summer: 4,483 → 954 → 387.
 FY 2025/26 paid media: **$288,357** (Google $140,222 · Meta $148,135).
 Blended first-touch cost per started app ≈ **$51**.
 
-**90 tests** pass against the real sample files. If a change moves any canonical
+**93 tests** pass against the real sample files. If a change moves any canonical
 number above, that is a regression until proven otherwise.
 
 ---
@@ -400,14 +400,42 @@ How that is done here, every time:
 The page-wide filter bar (fiscal year pills, Add filter) is the one intended
 exception — it changes every section at once, so a reload is the honest model.
 
-**Audited 2026-09-24** by clicking each control and checking whether the page
-survived. Instant: both channel-card stage pickers, cost chips on the overview
-and on `/cost`, the series pickers, and (after this change) the YoY stage chips.
-**Still reloading, and next to fix: the tag-timeline controls** — bucket,
-measure, the apps band toggle, and the year picker. That one is bigger: 3
-buckets x 2 measures x any mix of years, plus the timeline chart code. There is
-a test (`test_yoy_page_ships_every_stage_so_the_picker_never_reloads`) that
-fails if the YoY section stops shipping every stage.
+**Audited 2026-09-24** by clicking every section control and checking whether
+the page survived: **all 11 on the overview switch in place**, and `/cost`'s
+chips too. Tests fail if the YoY section stops shipping every stage
+(`test_yoy_page_ships_every_stage_so_the_picker_never_reloads`) or if the
+timeline stops shipping its client state.
+
+**The tag timeline is the one that needed real design**, because its controls
+are not just a lookup:
+
+* It is 3 buckets x 2 counts. Shipping all six inline was measured at ~216 KB
+  and +1.2 s on "All time", so the page carries only the combination on screen
+  and fetches the other five from `/timeline.json` in the background right after
+  load. They are in hand before anyone clicks; a click that beats the fetch
+  waits for it; a failed fetch falls back to the link's href (a reload, never a
+  dead button). `/timeline.json` reads the same filters as the page and sits
+  behind the same login (checked: 401 without credentials).
+* The combination on screen ships with **every** fiscal year, so the year chips
+  need no request at all. But ticking years is not a filter on finished data —
+  it changes which eight lines survive (ranked by volume in the ticked years,
+  ties in name order), which year is drawn solid, and the headline. The
+  browser recomputes all of that exactly as `tag_timeline` does.
+* **Distinct people does not add up across years** — one person active in two
+  years is one person. So it ships as a count per *set of years a person
+  appears in* (a bitmask over `year_index`); the headcount for any ticked subset
+  is the sum over masks that share a bit with it. Exact, and a handful of
+  numbers however many people there are.
+* `test_timeline_client_rebuild_matches_the_server_for_every_year_subset`
+  mirrors the browser's derivation in Python and holds it to the server's own
+  numbers for every bucket x count x year subset. It was also checked live:
+  13 clicks in a row, each compared against a fresh server render of the same
+  URL — lines, totals, headline and chip states all identical.
+
+Found on the way and fixed: the series pickers wrote only *drawable* names into
+the URL, so a channel you had ticked, which happened to have no data in the
+ticked years, silently dropped out of the address bar and a reload unticked
+it. The URL now carries the full selection in picker order, as the server does.
 
 ## Analytical decisions worth not re-litigating
 

@@ -2155,3 +2155,128 @@ def test_yoy_page_ships_every_stage_so_the_picker_never_reloads(tmp_path, monkey
     assert m, "pace payload not found"
     stages = json.loads(m.group(1))["stages"]
     assert set(stages) == set(prog.stage_dates)
+
+
+# ---------------------------------------------------------------------------
+# Tag timeline controls switch in place
+# ---------------------------------------------------------------------------
+
+def _tl_client_derive(payload, years):
+    """A line-for-line Python mirror of app.js tlDerive + tlHeadline.
+
+    The browser rebuilds the timeline for any ticked subset of years from
+    timeline_payload() alone. This mirror is what lets a test hold that
+    rebuild to the server's own numbers.
+    """
+    ys = set(years)
+    tot = {}
+    for e in payload["entities"]:
+        lines = [l for l in e["lines"] if l["fy"] in ys]
+        if lines:
+            tot[e["name"]] = sum(l["total"] for l in lines)
+    rank = [n for n, _ in sorted(tot.items(), key=lambda kv: (-kv[1], kv[0]))]
+    yi = payload["year_index"]
+    bits = 0
+    for y in ys:
+        if y in yi:
+            bits |= 1 << yi.index(y)
+    people = sum(n for m, n in payload["people_masks"].items() if int(m) & bits)
+    tags = sum(payload["by_year"][str(y)]["tags"] for y in ys if str(y) in payload["by_year"])
+    approx = sum(payload["by_year"][str(y)]["approx"] for y in ys if str(y) in payload["by_year"])
+    grand = sum(l["total"] for e in payload["entities"] for l in e["lines"] if l["fy"] in ys)
+    seen = {l["fy"] for e in payload["entities"] for l in e["lines"] if l["fy"] in ys}
+    return {"rank": rank, "people": people, "tags": tags, "approx": approx,
+            "grand": grand, "newest": max(seen) if seen else None}
+
+
+def test_timeline_client_rebuild_matches_the_server_for_every_year_subset(ft_db):
+    """The year chips switch in the browser, so the browser must reach the SAME
+    numbers a reload would -- for every bucket x count x subset of years.
+
+    The hard one is distinct people: it does not add up across years (one
+    person in two years is one person), which is why it ships as per-person
+    year bitmasks rather than a per-year figure.
+    """
+    from itertools import combinations
+    conn, prog = ft_db, programs.get("ft")
+    flt = filters.Filters(prog)
+    checked = 0
+    for bucket in metrics.TL_BUCKETS:
+        for measure in metrics.TL_MEASURES:
+            payload = metrics.timeline_payload(conn, prog, flt.where, flt.params,
+                                               bucket=bucket, measure=measure)
+            yi = payload["year_index"]
+            assert yi, "sample data should span at least one fiscal year"
+            for k in range(1, len(yi) + 1):
+                for subset in combinations(yi, k):
+                    srv = metrics.tag_timeline(conn, prog, flt.where, flt.params,
+                                               cap=False, bucket=bucket,
+                                               measure=measure, years=list(subset))
+                    cli = _tl_client_derive(payload, subset)
+                    srv_rank = [g for g, _ in sorted(
+                        {s["group"]: s["rank"] for s in srv["series"]}.items(),
+                        key=lambda kv: kv[1])]
+                    where = (bucket, measure, subset)
+                    assert cli["people"] == srv["people_unique"], where
+                    assert cli["tags"] == srv["tags_total"], where
+                    assert cli["approx"] == srv["approx"], where
+                    assert cli["grand"] == srv["grand_total"], where
+                    assert cli["rank"] == srv_rank, where
+                    assert cli["newest"] == srv["newest"], where
+                    checked += 1
+    assert checked >= 6
+
+
+def test_timeline_json_serves_every_combination_behind_the_page_filters(tmp_path, monkeypatch):
+    from starlette.testclient import TestClient
+    from app import main as _main
+    dbpath = str(tmp_path / "tl.db")
+    conn = db.connect(dbpath)
+    ingest.ingest(conn, FT_FILE, "ft", "ft.xlsx", "")
+    conn.close()
+    monkeypatch.setattr(_main, "DB_PATH", dbpath)
+    client = TestClient(_main.app)
+
+    for bucket in metrics.TL_BUCKETS:
+        for measure in metrics.TL_MEASURES:
+            r = client.get("/timeline.json?program=ft&dates=all&tl_bucket=%s&tl_measure=%s"
+                           % (bucket, measure))
+            assert r.status_code == 200, (bucket, measure)
+            body = r.json()
+            assert body["bucket"] == bucket and body["measure"] == measure
+            assert body["entities"] and body["year_index"]
+            assert all(len(l["data"]) == len(body["labels"])
+                       for e in body["entities"] for l in e["lines"])
+
+    # It reads the same filters as the page, so a narrower filter shrinks it.
+    wide = client.get("/timeline.json?program=ft&dates=all").json()
+    one_region = sorted(
+        (v for v, _n in filters.facet_values(db.connect(dbpath), programs.get("ft"))["regions"]
+         if v != filters.NONE_TOKEN), key=str)[0]
+    narrow = client.get("/timeline.json", params={
+        "program": "ft", "dates": "all", "region": one_region}).json()
+    total = lambda b: sum(l["total"] for e in b["entities"] for l in e["lines"])
+    assert total(narrow) < total(wide)
+
+
+def test_overview_ships_the_timeline_state_for_in_place_controls(tmp_path, monkeypatch):
+    """Every timeline control carries a data hook for app.js, and the page
+    carries this view's combination with EVERY fiscal year so the year chips
+    need no request at all."""
+    import json, re
+    from starlette.testclient import TestClient
+    from app import main as _main
+    dbpath = str(tmp_path / "tl2.db")
+    conn = db.connect(dbpath)
+    ingest.ingest(conn, FT_FILE, "ft", "ft.xlsx", "")
+    conn.close()
+    monkeypatch.setattr(_main, "DB_PATH", dbpath)
+    body = TestClient(_main.app).get("/?program=ft&dates=all").text
+
+    for hook in ("data-tlctl", "data-tl-bucket=", "data-tl-measure=",
+                 "data-tl-apps", "data-tl-year=", 'data-tl="headline"'):
+        assert hook in body, hook
+    m = re.search(r"AADA\.wireTimelineControls\((\{.*\})\);", body)
+    assert m, "timeline client state not found"
+    state = json.loads(m.group(1))
+    assert sorted(state["combo"]["year_index"]) == sorted(state["all_years"])

@@ -633,6 +633,24 @@ def overview(request: Request):
             "newest": tl["newest"], "entities": tl_entities,
             "selected": tl_selected, "limit": 8,
         }
+        # The four timeline controls (bucket, count, started-apps band, fiscal
+        # year) switch in place. This view's bucket x measure ships with EVERY
+        # year, so the year chips are instant from first paint; the other five
+        # combinations are fetched in the background right after load from
+        # /timeline.json, so they are ready before anyone clicks. Shipping all
+        # six inline was measured at ~216 KB and +1.2s on "All time" -- the
+        # background fetch keeps first paint as fast as it was.
+        tl_client = {
+            "combo": metrics.timeline_payload(
+                conn, program, flt.where, flt.params,
+                bucket=tl["bucket"], measure=tl["measure"]),
+            "bucket": tl["bucket"], "measure": tl["measure"],
+            "years": [int(y) for y in sel_years],
+            "all_years": [int(y) for y in all_years],
+            "apps": q.get("tl_apps") == "1",
+            "buckets": list(metrics.TL_BUCKETS), "measures": list(metrics.TL_MEASURES),
+            "defaults": {"bucket": "week", "measure": "tags"},
+        }
         tl = tl_view
         # Reference band: applications started, same buckets, same axis. Off by
         # default so the chart stays about tags unless it is asked for.
@@ -662,6 +680,7 @@ def overview(request: Request):
             pen_tree=pen_tree, pen_selected=pen_selected, pen_all=pen_all,
             pen_payload=pen_payload,
             timeline=tl, tl_facets=tl_facets, tl_payload=tl_payload,
+            tl_client=tl_client,
             tl_apps=tl_apps, tl_started=tl_started,
             tl_tree=tl_tree, tl_all=tl_all, tl_selected=tl_selected,
             tl_all_years=all_years,
@@ -833,6 +852,24 @@ def _cost_view(conn, program, flt, any_matrix, first_matrix, stage,
         "has_spend": bool(cost["rows"]),
     })
     return cost
+
+
+@app.get("/timeline.json")
+def timeline_json(request: Request):
+    """One bucket x measure of the tag timeline, every fiscal year, for the
+    overview's in-place controls. Same filters as the page (it reads the same
+    query string), and behind the same login -- the app-wide dependency covers
+    this route like any other."""
+    from fastapi.responses import JSONResponse
+    conn = get_conn()
+    try:
+        program, flt = _resolve(request)
+        q = request.query_params
+        return JSONResponse(metrics.timeline_payload(
+            conn, program, flt.where, flt.params,
+            bucket=q.get("tl_bucket", "week"), measure=q.get("tl_measure", "tags")))
+    finally:
+        conn.close()
 
 
 @app.get("/cost", response_class=HTMLResponse)
