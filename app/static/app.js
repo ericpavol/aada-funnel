@@ -648,37 +648,77 @@
     });
   }
 
-  /** Year-over-year pace: cumulative starts, this year against the same days
-   * last year. Indexed by DAY OFFSET rather than date so the two overlay --
-   * day 1 sits on day 1. Last year is dashed and grey: it is the reference,
-   * not a second thing being measured. */
+  /** Year-over-year pace: cumulative count of the chosen stage, this year
+   * against the same days last year. Indexed by DAY OFFSET rather than date so
+   * the two overlay -- day 1 sits on day 1. Last year is dashed and grey: it is
+   * the reference, not a second thing being measured.
+   *
+   * Each line ends in its final value, drawn on the chart, so the headline
+   * numbers need no hover. The two labels are pushed apart when the lines
+   * finish close together, which is the COMMON case in a close year. */
   function yoyPaceChart(data) {
+    var yoyEndLabels = {
+      id: "yoyEndLabels",
+      afterDatasetsDraw: function (chart) {
+        var ctx = chart.ctx, area = chart.chartArea;
+        var marks = chart.data.datasets.map(function (ds, i) {
+          var meta = chart.getDatasetMeta(i);
+          var pt = meta.data[meta.data.length - 1];
+          return pt ? { x: pt.x, y: pt.y, v: ds.data[ds.data.length - 1],
+                        c: ds.borderColor, strong: i === 1 } : null;
+        }).filter(Boolean);
+        // Keep the labels at least one line apart, favouring the natural order.
+        if (marks.length === 2) {
+          var a = marks[0], b = marks[1], gap = 14;
+          if (Math.abs(a.y - b.y) < gap) {
+            var mid = (a.y + b.y) / 2, up = a.y <= b.y ? a : b;
+            var dn = up === a ? b : a;
+            up.y = mid - gap / 2; dn.y = mid + gap / 2;
+          }
+        }
+        ctx.save();
+        ctx.textBaseline = "middle";
+        ctx.textAlign = "left";
+        marks.forEach(function (m) {
+          ctx.font = (m.strong ? "600 " : "500 ") + "11.5px 'Plex', sans-serif";
+          ctx.fillStyle = m.c;
+          var y = Math.min(Math.max(m.y, area.top + 6), area.bottom - 6);
+          ctx.fillText(numFmt(m.v), m.x + 8, y);
+        });
+        ctx.restore();
+      }
+    };
+
     register("yoyPace", function (el, t) {
       var labels = data.cur.map(function (_v, i) { return i + 1; });
       return new Chart(el, {
         type: "line",
+        plugins: [yoyEndLabels],
         data: {
           labels: labels,
           datasets: [
             { label: data.priLabel, data: data.pri, borderColor: t.ink3,
               borderDash: [4, 3], borderWidth: 2, pointRadius: 0,
               tension: .25, fill: false },
-            { label: data.curLabel, data: data.cur, borderColor: t.accent,
+            { label: data.curLabel, data: data.cur, borderColor: t.accentStrong || t.accent,
               borderWidth: 2.5, pointRadius: 0, tension: .25, fill: false }
           ]
         },
         options: {
           maintainAspectRatio: false,
+          // Room on the right for the end labels.
+          layout: { padding: { right: 46, top: 8 } },
           interaction: { mode: "index", intersect: false },
           plugins: {
             legend: { display: true, position: "bottom",
                       labels: { boxWidth: 18, boxHeight: 2, font: { size: 11 },
-                                color: t.ink2, usePointStyle: false } },
+                                color: t.ink2 } },
             tooltip: {
               callbacks: {
                 title: function (c) { return "Day " + c[0].label; },
                 label: function (c) {
-                  return c.dataset.label + ": " + numFmt(c.parsed.y);
+                  return c.dataset.label + ": " + numFmt(c.parsed.y) + " " +
+                    (data.stage || "").toLowerCase();
                 }
               }
             }

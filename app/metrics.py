@@ -149,7 +149,16 @@ def yoy_funnel(conn, program, flt, today, cohort_field=None):
     present-day figure for context and no delta. See Program.stage_dates.
     """
     field = cohort_field or flt.date_field or "started_date"
-    cur, prior = yoy_window(flt.date_from, flt.date_to, today)
+    # Stop where the DATA stops, not at today. Exports lag: on the day after a
+    # pull, "today" gives this year an empty day while last year gets a full
+    # one, and the comparison drifts downward every day the export is not
+    # refreshed. Measured on 2026-09-24 against a 23 Sept export: Started went
+    # from -8% to -15% overnight with nothing having happened.
+    through = conn.execute(
+        "SELECT MAX(started_date) FROM applicants WHERE program=? AND started_date<>''",
+        (program.key,)).fetchone()[0]
+    as_of = min(today, through) if through else today
+    cur, prior = yoy_window(flt.date_from, flt.date_to, as_of)
     if not cur:
         return None
 
@@ -192,58 +201,100 @@ def yoy_funnel(conn, program, flt, today, cohort_field=None):
     base_row = next((r for r in rows if r["key"] == program.stage_keys[0]), None)
     thin = bool(base_row and base_row["current"]
                 and base_row["prior"] < base_row["current"] * 0.1)
-    return {"current": cur, "prior": prior, "field": field,
+    return {"current": cur, "prior": prior, "field": field, "as_of": as_of,
             "field_label": program.date_fields.get(field, field),
             "rows": rows, "prior_thin": thin,
             "prior_n": base_row["prior"] if base_row else 0,
             "n_comparable": sum(1 for r in rows if r["comparable"])}
 
 
-def yoy_pace(conn, program, flt, cur, prior, field="started_date"):
-    """Cumulative count per day across each window, for the pace chart.
+def yoy_stage_options(program):
+    """Every funnel stage, flagged by whether it can be paced at all.
 
-    Both series are indexed by DAY OFFSET, not by date, so they overlay: day 1
-    of this year sits on day 1 of last year.
+    Pacing plots when things HAPPENED, day by day, so it needs the stage's own
+    date column (Program.stage_dates). A stage without one cannot be paced --
+    the flag says whether it was ever reached, not when. Those are still listed,
+    marked unavailable, so the picker shows the whole funnel and a stage turns
+    on by itself the day Slate sends its date.
+    """
+    return [{"key": k, "label": program.stage_labels[k],
+             "available": k in program.stage_dates}
+            for k in program.stage_keys]
+
+
+def _cohort(flt, field, lo, hi):
+    """WHERE + params for the people whose cohort date falls in [lo, hi]."""
+    base = flt.without("date")
+    return (base.where + " AND %s <> '' AND %s >= ? AND %s <= ?" % (field, field, field),
+            list(base.params) + [lo, hi])
+
+
+def yoy_pace(conn, program, flt, cur, prior, field="started_date", stage="started"):
+    """Cumulative count per day of the cohort reaching `stage`, for each window.
+
+    Indexed by DAY OFFSET, not by date, so the two years overlay: day 1 sits on
+    day 1. Day N counts cohort members whose stage date is on or before day N of
+    that window -- for Submitted, that is "submitted by this point in the year",
+    the same cut the funnel rows use.
     """
     import datetime as _dt
+    datecol = program.stage_dates[stage]
 
     def series(lo, hi):
+        where, params = _cohort(flt, field, lo, hi)
         rows = conn.execute(
-            "SELECT %s AS d, COUNT(*) n FROM applicants WHERE %s"
-            " AND %s <> '' AND %s >= ? AND %s <= ? GROUP BY 1"
-            % (field, flt.without("date").where, field, field, field),
-            list(flt.without("date").params) + [lo, hi]).fetchall()
-        by_day = {r["d"]: r["n"] for r in rows}
+            "SELECT %s AS d FROM applicants WHERE %s AND %s <> '' AND %s <= ?"
+            % (datecol, where, datecol, datecol), params + [hi]).fetchall()
         start = _dt.date(int(lo[:4]), int(lo[5:7]), int(lo[8:10]))
         end = _dt.date(int(hi[:4]), int(hi[5:7]), int(hi[8:10]))
+        n_days = (end - start).days + 1
+        per_day = [0] * n_days
+        for r in rows:
+            d = r["d"][:10]
+            # A stage date before the window opens (rare, data-entry order)
+            # still counts from day 1 rather than being lost.
+            i = max(0, (_dt.date(int(d[:4]), int(d[5:7]), int(d[8:10])) - start).days)
+            if i < n_days:
+                per_day[i] += 1
         out, run = [], 0
-        for i in range((end - start).days + 1):
-            run += by_day.get((start + _dt.timedelta(days=i)).isoformat(), 0)
+        for v in per_day:
+            run += v
             out.append(run)
         return out
 
     a, b = series(*cur), series(*prior)
     n = min(len(a), len(b))            # a leap year makes these differ by one
-    return {"current": a[:n], "prior": b[:n], "days": n}
+    a, b = a[:n], b[:n]
+    c_end, p_end = (a[-1] if a else 0), (b[-1] if b else 0)
+    return {"current": a, "prior": b, "days": n,
+            "current_final": c_end, "prior_final": p_end,
+            "delta": (c_end - p_end) / p_end if p_end else None}
 
 
-def yoy_channels(conn, program, flt, cur, prior, field="started_date", limit=8):
-    """Per-channel reach in each window -> rows sorted by this year's size.
+def yoy_channels(conn, program, flt, cur, prior, field="started_date",
+                 stage="started", limit=8, paid=()):
+    """Per-channel reach among people who reached `stage` by the end of each
+    window -> rows sorted by size.
 
-    Any-touch (distinct people who touched the channel), matching how the
-    channel cards on the same page count. These rows overlap and must not be
-    summed -- see CLAUDE.md.
+    Any-touch (distinct people who touched the channel), matching the channel
+    cards on the same page. These rows overlap and must not be summed -- see
+    CLAUDE.md.
+
+    `paid` is the set of channels that have spend uploaded -- the same
+    definition the Cost card uses, so a new platform counts as paid the moment
+    its spend file lands, with no list to maintain here.
     """
-    base = flt.without("date")
+    datecol = program.stage_dates[stage]
+    paid = set(paid)
 
     def pull(lo, hi):
+        where, params = _cohort(flt, field, lo, hi)
         rows = conn.execute(
             "SELECT p.channel c, COUNT(DISTINCT p.applicant_id) n FROM pings p"
             " WHERE p.channel <> '' AND p.applicant_id IN"
-            "   (SELECT id FROM applicants WHERE %s AND %s <> ''"
-            "    AND %s >= ? AND %s <= ?)"
-            " GROUP BY 1" % (base.where, field, field, field),
-            list(base.params) + [lo, hi]).fetchall()
+            "   (SELECT id FROM applicants WHERE %s AND %s <> '' AND %s <= ?)"
+            " GROUP BY 1" % (where, datecol, datecol),
+            params + [hi]).fetchall()
         return {r["c"]: r["n"] for r in rows}
 
     now, was = pull(*cur), pull(*prior)
@@ -252,6 +303,7 @@ def yoy_channels(conn, program, flt, cur, prior, field="started_date", limit=8):
         c, p = now.get(name, 0), was.get(name, 0)
         out.append({"channel": name, "current": c, "prior": p,
                     "delta": (c - p) / p if p else None, "diff": c - p,
+                    "paid": name in paid,
                     "colour_index": taxonomy.channel_slot(name)})
     out.sort(key=lambda r: -max(r["current"], r["prior"]))
     return out[:limit]

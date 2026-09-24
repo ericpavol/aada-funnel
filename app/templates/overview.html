@@ -104,10 +104,7 @@
       <div class="figure-unit">applicants in scope{% if filters.active %} · filtered{% endif %}</div>
       <p class="herometa">No marketing attribution in this view — just the raw
         progression. Each step is measured against the stage before it.</p>
-      {% if not yoy_on %}
-        <a class="btn ghost sm" href="?{{ qs_set(request, 'yoy', '1') }}#yoy"
-           style="margin-top:4px">Compare to last year →</a>
-      {% endif %}
+
       {% if 'enrolled' in program.stage_keys %}
         {# A DIV, not a <p>: tip() emits <p> elements, and a <p> inside a <p>
            makes the parser close the outer one — which silently hoisted the
@@ -193,8 +190,7 @@
   </div>
 </section>
 
-{# ---------- 1b. YEAR OVER YEAR ---------- #}
-{% if yoy_on %}
+{# ---------- 1b. YEAR OVER YEAR (always shown) ---------- #}
 <section class="card" id="yoy">
   <div class="cardhead">
     <div class="grow">
@@ -209,7 +205,6 @@
          They light up automatically once Slate sends the dates.',
       ]) }}</h2>
     </div>
-    <a class="btn ghost" href="?{{ qs_set(request, 'yoy', none) }}#yoy">Hide</a>
   </div>
 
   {% if not yoy %}
@@ -217,7 +212,8 @@
       “All time” has no matching period.</p>
   {% else %}
     <p class="sub">{{ yoy.current[0] }} → {{ yoy.current[1] }}
-      vs {{ yoy.prior[0] }} → {{ yoy.prior[1] }} · by {{ yoy.field_label|lower }}</p>
+      vs {{ yoy.prior[0] }} → {{ yoy.prior[1] }} · by {{ yoy.field_label|lower }}
+      · <span title="The comparison stops where the latest export stops, not at today — otherwise every day between exports would count as a zero day for this year only.">data through {{ yoy.as_of }}</span></p>
 
     {% if yoy.prior_thin %}
       <div class="note warn" style="margin-top:10px">
@@ -265,20 +261,46 @@
       submitted <b>by this point</b> in each year. Applicants often submit weeks
       or months after starting, so both years' figures will keep rising.</p>
 
-    {# ---- pace ---- #}
+    {# ---- stage picker: drives the pace chart AND the channel panel ---- #}
+    <div class="stagebar yoypick">
+      <span class="eyebrow">Pace &amp; channels for</span>
+      <div class="tabsm">
+        {% for o in yoy.stage_opts %}
+          {% if o.available %}
+            <a class="{{ 'on' if o.key == yoy.stage else '' }}"
+               href="?{{ qs_set(request, 'ys', none if o.key == program.stage_keys[0] else o.key) }}#yoy">{{ o.label }}</a>
+          {% else %}
+            <span class="off" title="Slate sends no date for {{ o.label }} — only whether it happened, not when — so it cannot be paced day by day yet. It turns on automatically once the date is in the export.">{{ o.label }}</span>
+          {% endif %}
+        {% endfor %}
+      </div>
+    </div>
+
     <div class="yoysplit">
       <div>
-        <div class="eyebrow" style="margin-bottom:6px">Pace · cumulative {{
-          yoy.rows[0].label|lower }}</div>
+        <div class="yoystat">
+          <span class="eyebrow">Pace · cumulative {{ yoy.stage_label|lower }}</span>
+          <span class="ystat">
+            <b>{{ yoy.pace.current_final|num }}</b>
+            <span class="pale">vs {{ yoy.pace.prior_final|num }}</span>
+            {% if yoy.pace.delta is not none %}
+              <span class="{{ 'up' if yoy.pace.current_final >= yoy.pace.prior_final else 'down' }}">{{
+                '+' if yoy.pace.current_final >= yoy.pace.prior_final else '' }}{{ (yoy.pace.delta * 100)|round(0)|int }}%</span>
+            {% endif %}
+          </span>
+        </div>
         <div class="chartbox sm"><canvas id="yoyPace"></canvas></div>
       </div>
       <div>
-        <div class="eyebrow" style="margin-bottom:6px">Channels · people reached</div>
+        <div class="yoystat">
+          <span class="eyebrow">Channels · people reaching {{ yoy.stage_label|lower }}</span>
+          <span class="hint"><i class="paiddot"></i> paid</span>
+        </div>
         <div class="ychans">
           {% for c in yoy.channels %}
             {% set top = yoy.channels|map(attribute='current')|max %}
             <div class="ychan">
-              <span class="ycn">{{ c.channel }}</span>
+              <span class="ycn">{% if c.paid %}<i class="paiddot" title="Has media spend uploaded"></i>{% endif %}{{ c.channel }}</span>
               <span class="ycbar"><i style="width:{{ (c.current / top * 100)|round(1) if top else 0 }}%"></i></span>
               <span class="ycd">
                 {% if c.delta is none %}
@@ -297,7 +319,6 @@
 
   {% endif %}
 </section>
-{% endif %}
 
 {# ---------- 2. COMPARISON ---------- #}
 <div class="grid2">
@@ -621,8 +642,8 @@
 </details>
 
 <script>
-  {% if yoy_on and yoy %}AADA.yoyPaceChart({{ {
-    'cur': yoy.pace.current, 'pri': yoy.pace.prior,
+  {% if yoy %}AADA.yoyPaceChart({{ {
+    'cur': yoy.pace.current, 'pri': yoy.pace.prior, 'stage': yoy.stage_label,
     'curLabel': 'FY ' ~ yoy.current[0][:4] ~ '/' ~ ((yoy.current[0][:4]|int + 1)|string)[2:],
     'priLabel': 'FY ' ~ yoy.prior[0][:4] ~ '/' ~ ((yoy.prior[0][:4]|int + 1)|string)[2:]
   }|tojson }});{% endif %}

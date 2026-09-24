@@ -387,17 +387,28 @@ def overview(request: Request):
 
         overall = metrics.overall_funnel(program, flags)
 
-        # Year over year, same point in the year. Needs an active date range --
-        # "all time" has no counterpart period to compare against.
-        yoy = None
-        if q.get("yoy") == "1":
-            today = _dt.date.today().isoformat()
-            yoy = metrics.yoy_funnel(conn, program, flt, today)
-            if yoy:
-                yoy["pace"] = metrics.yoy_pace(
-                    conn, program, flt, yoy["current"], yoy["prior"], yoy["field"])
-                yoy["channels"] = metrics.yoy_channels(
-                    conn, program, flt, yoy["current"], yoy["prior"], yoy["field"])
+        # Year over year, same point in the year. Always shown; it needs an
+        # active date range, so "all time" gets a prompt instead.
+        #
+        # `ys` picks the stage the pace chart and channel panel measure. Only a
+        # stage with a date column can be paced (see Program.stage_dates), so
+        # anything else falls back to Started rather than drawing a fiction.
+        today = _dt.date.today().isoformat()
+        yoy = metrics.yoy_funnel(conn, program, flt, today)
+        if yoy:
+            ys = q.get("ys")
+            ys = ys if ys in program.stage_dates else program.stage_keys[0]
+            paid = [r["channel"] for r in conn.execute(
+                "SELECT DISTINCT channel FROM spend WHERE program=?", (program.key,))]
+            yoy["stage"] = ys
+            yoy["stage_label"] = program.stage_labels[ys]
+            yoy["stage_opts"] = metrics.yoy_stage_options(program)
+            yoy["pace"] = metrics.yoy_pace(
+                conn, program, flt, yoy["current"], yoy["prior"], yoy["field"],
+                stage=ys)
+            yoy["channels"] = metrics.yoy_channels(
+                conn, program, flt, yoy["current"], yoy["prior"], yoy["field"],
+                stage=ys, paid=paid)
         # AOS vs BFA beside the headline funnel. Blank-degree rows are
         # excluded, so these two do not sum to `overall` -- see funnel_by.
         overall_split = (metrics.funnel_by(program, apps, flags, "degree",
@@ -618,7 +629,7 @@ def overview(request: Request):
             cost_attr=cost_attr, attributions=ATTRIBUTIONS,
             cost_payload=cost_payload,
             overall_split=overall_split,
-            yoy=yoy, yoy_on=(q.get("yoy") == "1"),
+            yoy=yoy,
             chart_penetration=chart_penetration,
             series_index=series_index,
             pen_tree=pen_tree, pen_selected=pen_selected, pen_all=pen_all,

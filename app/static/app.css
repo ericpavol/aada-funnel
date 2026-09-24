@@ -842,3 +842,24 @@ code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11.5px;
   .yoysplit{grid-template-columns:1fr}
   .yoyrow{grid-template-columns:110px 1fr 48px 48px 48px;gap:8px}
 }
+
+/* YoY stage picker. Stages with no date column are listed but inert -- the
+   whole funnel stays visible, and one turns on by itself once Slate sends its
+   date (Program.stage_dates). */
+.yoypick{margin-top:22px;padding-top:16px;border-top:1px solid var(--ring-2)}
+.tabsm span.off{display:inline-flex;align-items:center;padding:5px 12px;
+  border:1px dashed var(--ring);border-radius:var(--r-pill);font-size:12px;
+  color:var(--ink-3);opacity:.6;cursor:help}
+.yoypick + .yoysplit{margin-top:6px;padding-top:0;border-top:0}
+.yoystat{display:flex;justify-content:space-between;align-items:baseline;
+  gap:10px;margin-bottom:8px;flex-wrap:wrap}
+.ystat{display:flex;align-items:baseline;gap:8px;font-variant-numeric:tabular-nums}
+.ystat b{font-size:20px;font-weight:500}
+.ystat .pale{font-size:12.5px;color:var(--ink-3)}
+.ystat .up{font-size:12.5px;font-weight:600;color:var(--delta-up)}
+.ystat .down{font-size:12.5px;font-weight:600;color:var(--delta-down)}
+/* Marks a channel with spend uploaded. Derived from the spend table, so a new
+   platform picks this up the moment its file lands. */
+.paiddot{display:inline-block;width:6px;height:6px;border-radius:50%;
+  background:var(--accent-strong);margin-right:6px;vertical-align:1px}
+.yoystat .hint{font-size:11px}

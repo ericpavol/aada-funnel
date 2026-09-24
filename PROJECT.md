@@ -51,7 +51,7 @@ Summer: 4,483 → 954 → 387.
 FY 2025/26 paid media: **$288,357** (Google $140,222 · Meta $148,135).
 Blended first-touch cost per started app ≈ **$51**.
 
-**83 tests** pass against the real sample files. If a change moves any canonical
+**88 tests** pass against the real sample files. If a change moves any canonical
 number above, that is a regression until proven otherwise.
 
 ---
@@ -316,7 +316,9 @@ ignored"), and a file dropped anywhere else on the page is swallowed so the
 browser doesn't navigate away to it and lose the form.
 
 ### Year over year compares the same POINT in the year, never year-to-date
-`?yoy=1` on the overview. The current window is capped at **today** and the
+Always shown on the overview (Eric, 2026-09-24 — it used to sit behind a
+`?yoy=1` toggle). "All time" has no counterpart period, so it gets a prompt to
+pick a fiscal year instead. The current window is capped at **today** and the
 prior window is the same calendar days a year earlier. A fiscal-year filter runs
 to next August; three weeks in, only three weeks have happened, and comparing
 that against twelve months of last year would report a collapse every year
@@ -340,6 +342,29 @@ for an audition stage, the work is (1) add the column to a new `Layout`, (2) add
 one line to `stage_dates`. The comparison view needs no changes — there is a test
 (`test_a_stage_becomes_comparable_the_moment_it_gets_a_date`) that fails if
 someone hardcodes the two stages instead.
+
+**It stops where the data stops, not at today.** Exports lag, and capping at
+today hands this year empty days that last year does not get. Found the hard
+way: on 2026-09-24, against a 23 Sept export, Started slid from −8% to −15%
+overnight with nothing having happened. The cap is `MAX(started_date)` for the
+program, shown on the page as "data through …".
+
+**Stage picker (`?ys=`)** drives the pace chart and the channel panel together.
+It lists the whole funnel; only stages in `stage_dates` are clickable, the rest
+are greyed with a tooltip saying why. An undated stage passed in the URL falls
+back to Started rather than drawing a pace line the data cannot support. Pace
+for a stage counts cohort members whose stage date is on or before each day, so
+its final value equals that stage's funnel row — a test pins the agreement.
+
+**Paid** in the channel panel means "has spend uploaded" — the same definition
+the Cost card uses (`SELECT DISTINCT channel FROM spend`). No list to maintain:
+TikTok, Microsoft and ChatGPT ads will be marked paid the moment their spend
+files land.
+
+Each pace line ends in its **final value drawn on the chart**, pushed apart when
+the two finish close together (the common case in a close year). This year's
+line uses `--accent-strong`, not `--accent`: lime is 1.3:1 against the light
+surface, so a lime number printed on the chart would be unreadable.
 
 Also in the section: a cumulative **pace** chart indexed by day offset so the two
 years overlay, and per-channel deltas. A near-empty prior window is flagged

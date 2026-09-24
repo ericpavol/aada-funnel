@@ -2025,3 +2025,80 @@ def test_yoy_pace_series_align_day_for_day(ft_db):
     assert pace["prior"] == sorted(pace["prior"])
     started = {r["key"]: r for r in res["rows"]}["started"]
     assert pace["current"][-1] == started["current"]
+
+
+def _first_month_window(conn):
+    lo = conn.execute("SELECT MIN(started_date) d FROM applicants"
+                      " WHERE program='ft' AND started_date<>''").fetchone()["d"]
+    return lo, "%s-%s-23" % (lo[:4], lo[5:7])
+
+
+def test_yoy_stops_where_the_data_stops_not_at_today(ft_db):
+    """Exports lag. Capping at today gives this year empty days that last year
+    does not have, so the comparison sinks every day the export is not
+    refreshed -- on 2026-09-24 against a 23 Sept export Started read -15%
+    instead of -8% for no real reason."""
+    conn, prog = ft_db, programs.get("ft")
+    through = conn.execute("SELECT MAX(started_date) FROM applicants"
+                           " WHERE program='ft' AND started_date<>''").fetchone()[0]
+    fy = filters.fiscal_year_of(through)
+    lo, hi = filters.fiscal_range(fy)
+    flt = filters.Filters(prog, date_field="started_date", date_from=lo, date_to=hi)
+
+    far_future = "2099-01-01"
+    res = metrics.yoy_funnel(conn, prog, flt, far_future)
+    assert res["as_of"] == through
+    assert res["current"][1] == through
+
+
+def test_yoy_pace_ends_on_the_same_number_as_the_funnel_row(ft_db):
+    """Pace and the funnel row are two views of one count; they must agree for
+    every stage that can be paced."""
+    conn, prog = ft_db, programs.get("ft")
+    lo, hi = _first_month_window(conn)
+    flt = filters.Filters(prog, date_field="started_date", date_from=lo, date_to=hi)
+    res = metrics.yoy_funnel(conn, prog, flt, hi)
+    rows = {r["key"]: r for r in res["rows"]}
+    for stage in prog.stage_dates:
+        pace = metrics.yoy_pace(conn, prog, flt, res["current"], res["prior"],
+                                stage=stage)
+        assert pace["current_final"] == rows[stage]["current"], stage
+        assert pace["prior_final"] == rows[stage]["prior"], stage
+
+
+def test_yoy_stage_options_list_the_whole_funnel(ft_db):
+    prog = programs.get("ft")
+    opts = metrics.yoy_stage_options(prog)
+    assert [o["key"] for o in opts] == prog.stage_keys
+    assert {o["key"] for o in opts if o["available"]} == set(prog.stage_dates)
+
+
+def test_yoy_channels_narrow_to_the_chosen_stage(ft_db):
+    """Picking Submitted must count only people who reached it by the window's
+    end -- never more people per channel than the Started view has."""
+    conn, prog = ft_db, programs.get("ft")
+    # The busiest fiscal year in the sample, not its thin first month -- the
+    # first month has nobody who submitted inside it.
+    through = conn.execute("SELECT MAX(started_date) FROM applicants"
+                           " WHERE program='ft' AND started_date<>''").fetchone()[0]
+    lo, hi = filters.fiscal_range(filters.fiscal_year_of(through))
+    flt = filters.Filters(prog, date_field="started_date", date_from=lo, date_to=hi)
+    res = metrics.yoy_funnel(conn, prog, flt, "2099-01-01")
+    started = {r["channel"]: r for r in metrics.yoy_channels(
+        conn, prog, flt, res["current"], res["prior"], stage="started", limit=99)}
+    submitted = metrics.yoy_channels(
+        conn, prog, flt, res["current"], res["prior"], stage="submitted", limit=99)
+    assert submitted, "expected some submitted applicants in the sample window"
+    for r in submitted:
+        assert r["current"] <= started[r["channel"]]["current"], r["channel"]
+
+
+def test_yoy_channels_mark_paid_from_the_spend_table_not_a_list(ft_db):
+    conn, prog = ft_db, programs.get("ft")
+    lo, hi = _first_month_window(conn)
+    flt = filters.Filters(prog, date_field="started_date", date_from=lo, date_to=hi)
+    res = metrics.yoy_funnel(conn, prog, flt, hi)
+    rows = metrics.yoy_channels(conn, prog, flt, res["current"], res["prior"],
+                                limit=99, paid=["Google (Paid)"])
+    flagged = {r["channel"] for r in rows if r["paid"]}
+    assert flagged <= {"Google (Paid)"}
