@@ -51,7 +51,7 @@ Summer: 4,483 → 954 → 387.
 FY 2025/26 paid media: **$288,357** (Google $140,222 · Meta $148,135).
 Blended first-touch cost per started app ≈ **$51**.
 
-**93 tests** pass against the real sample files. If a change moves any canonical
+**96 tests** pass against the real sample files. If a change moves any canonical
 number above, that is a regression until proven otherwise.
 
 ---
@@ -314,6 +314,56 @@ Drag-and-drop is layered on in `uploads.html`. Two things worth knowing:
 Non-`.xlsx`/`.csv` files are dropped on the floor with a count ("2 file(s)
 ignored"), and a file dropped anywhere else on the page is swallowed so the
 browser doesn't navigate away to it and lose the form.
+
+### The overall funnel carries last year, same point
+"Where everyone actually is" shows, per stage: **This year | Last year | Change
+| Conv.** (Eric, 2026-10-05). Last year is the same calendar day a year earlier,
+from `yoy_funnel`; the YoY section further down no longer repeats a stage table
+— it is just the pace chart and channels.
+
+* **Change** is the change in the NUMBER of people (−8%, +2%). **Conv.** is the
+  change in the share of Started who reached the stage, in **percentage
+  points** — 11.0% → 12.2% is +1.2 pts. As a percent it would read "+11%",
+  i.e. "eleven percent more people", which is not what happened (it was one).
+* **Both years' bars share one scale** — the larger of the two Started counts —
+  so 563 last year draws longer than 516 this year. Measured against their own
+  Started, both Started bars were full width and hid the difference. Last
+  year's bar is the same thickness, split by programme in lighter shades of the
+  same segment colours.
+* **A stage that cannot be cut off at the same day shows n/a in Last year**,
+  with no bar. Never last year's figure *today* under a "Last year" header: it
+  read as "at this time last year" — e.g. "12 enrolled" who in fact all
+  enrolled months later (11 on Fall 2026, 1 on January 2026).
+* The "↓453" drop-from-previous chips were removed from the funnel (Eric: they
+  pulled attention from the comparison).
+* With last year showing, the headline column narrows so the bars keep ~246 px
+  at a ~1000 px window; a zero change reads "—", not a green "+0".
+
+**Enrolled is now comparable, via `term_start`.** Slate sends no enrolment
+date, but nobody is enrolled before their term begins. `programs.term_start`
+derives the first day of the term's start month — Fall starts in **August**
+(AADA's own label: "Fall 2025 (August 2025)"), January/Spring/Winter in
+January, a bracketed month always wins. It is stored, backfilled on connect,
+and listed in `stage_dates`. First of the month is the earliest possible day,
+so the count is an upper bound: if it says 0, it is 0. Because `term_start`
+is set for everyone on a term, every same-point count also requires the stage
+flag (`st_<stage> = 1`), not just the date.
+
+**Still n/a: Audition Requested, Audition Complete, Admitted.** Yes/no flags,
+no dates. "Application Completed" was checked as a proxy — it exists for 79%
+of audition-completes and 93% of admits, so it would undercount and is not
+used. The fix is on Slate's side: ask for Audition Requested Date, Audition
+Completed Date and Decision Date; each stage lights up with one line in
+`stage_dates` once it is in the export.
+
+### Large fiscal years on the hosted server
+Reported 2026-10-05: on live, clicking FY 2025/26 (the largest year, ~5x the
+current one) reloaded but never finished. Not reproducible locally (~1 s), so
+the fix targets load on Render's small instance: the timeline's heaviest query
+no longer runs twice per page (the in-place controls reuse the chart's result
+when every year is ticked), and the five background `/timeline.json` fetches
+start when the pointer reaches the timeline controls, not after every page
+load — where they queued in front of the next page asked for.
 
 ### Year over year compares the same POINT in the year, never year-to-date
 Always shown on the overview (Eric, 2026-09-24 — it used to sit behind a

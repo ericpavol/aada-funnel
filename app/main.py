@@ -669,6 +669,36 @@ def overview(request: Request):
             years=sel_years,
         ) if tl_apps else None
 
+        # Last year at the same point, folded into the overall funnel rows.
+        # Same rule as the YoY section: a stage with no date column cannot be
+        # cut off at the same day, so it carries last year's figure for context
+        # and no change. The change is in PERCENTAGE POINTS of started -- a rise
+        # from 11.0% to 12.2% is +1.2 pts; as a percent it would read "+11%",
+        # i.e. "eleven percent more people", which is not what happened.
+        funnel_yoy = None
+        if yoy:
+            prior_by = {r["key"]: r for r in yoy["rows"]}
+            pbase = prior_by[program.stage_keys[0]]["prior"]
+            funnel_yoy = {"prior_thin": yoy["prior_thin"], "window": yoy["prior"],
+                          "as_of": yoy["as_of"],
+                          "started": prior_by[program.stage_keys[0]], "rows": {}}
+            for st in overall["steps"]:
+                r = prior_by[st["key"]]
+                ppct = r["prior"] / pbase if pbase else None
+                funnel_yoy["rows"][st["key"]] = {
+                    "prior": r["prior"], "prior_pct": ppct,
+                    "comparable": r["comparable"],
+                    # Change in the NUMBER of people, alongside the change in
+                    # conversion below -- the two answer different questions
+                    # (more people vs. a larger share of them getting through).
+                    "prior_by_degree": r.get("prior_by_degree") or {},
+                    "count_diff": st["n"] - r["prior"],
+                    "count_delta": ((st["n"] - r["prior"]) / r["prior"]
+                                    if r["prior"] and r["comparable"] else None),
+                    "delta_pts": ((st["pct_of_started"] - ppct) * 100
+                                  if ppct is not None and r["comparable"] else None),
+                }
+
         return templates.TemplateResponse("overview.html", _ctx(
             request, conn, program, flt,
             overall=overall, any_touch=any_touch, first_touch=first_touch,
@@ -682,7 +712,7 @@ def overview(request: Request):
             cost_attr=cost_attr, attributions=ATTRIBUTIONS,
             cost_payload=cost_payload,
             overall_split=overall_split,
-            yoy=yoy,
+            yoy=yoy, funnel_yoy=funnel_yoy,
             chart_penetration=chart_penetration,
             series_index=series_index,
             pen_tree=pen_tree, pen_selected=pen_selected, pen_all=pen_all,

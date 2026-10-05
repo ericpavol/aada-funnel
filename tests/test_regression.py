@@ -1974,9 +1974,9 @@ def test_yoy_refuses_a_delta_for_stages_with_no_date(ft_db):
     flt = filters.Filters(prog, date_field="started_date", date_from=lo, date_to=hi)
     rows = {r["key"]: r for r in metrics.yoy_funnel(conn, prog, flt, hi)["rows"]}
 
-    for key in ("started", "submitted"):
+    for key in ("started", "submitted", "enrolled"):
         assert rows[key]["comparable"] is True, key
-    for key in ("aud_req", "aud_comp", "admitted", "enrolled"):
+    for key in ("aud_req", "aud_comp", "admitted"):
         assert rows[key]["comparable"] is False, key
         assert rows[key]["delta"] is None, key
         assert rows[key]["diff"] is None, key
@@ -2280,3 +2280,56 @@ def test_overview_ships_the_timeline_state_for_in_place_controls(tmp_path, monke
     assert m, "timeline client state not found"
     state = json.loads(m.group(1))
     assert sorted(state["combo"]["year_index"]) == sorted(state["all_years"])
+
+
+
+def test_term_start_is_the_earliest_day_anyone_on_that_term_can_enrol():
+    # Fall starts in AUGUST -- AADA's own older label says so.
+    assert programs.term_start("Fall 2025 (August 2025)") == "2025-08-01"
+    assert programs.term_start("Fall 2026") == "2026-08-01"
+    assert programs.term_start("January 2027 (Spring)") == "2027-01-01"
+    assert programs.term_start("Winter 2026 (January 2026)") == "2026-01-01"
+    # Unknown or blank never guesses a date.
+    assert programs.term_start("") == ""
+    assert programs.term_start("Something 2026") == ""
+
+
+def test_enrolled_as_of_a_day_counts_only_terms_already_begun():
+    """Last year's Sept cohort shows enrolled people TODAY (they started in
+    Fall 2026 / January 2026), but on 23 Sept of last year none of them could
+    have been enrolled yet. The same-point count must say 0, not 12."""
+    conn = db.connect(":memory:")
+    prog = programs.get("ft")
+    rows = [
+        # (global_id, started, term, enrolled)
+        ("a", "2025-09-05", "Fall 2026", 1),
+        ("b", "2025-09-10", "January 2026 (Spring)", 1),
+        ("c", "2025-09-12", "Fall 2026", 0),
+        ("d", "2026-09-05", "Fall 2027", 0),
+    ]
+    for gid, started, term, enr in rows:
+        conn.execute(
+            "INSERT INTO applicants (program, global_id, term, term_start, started_date,"
+            " st_started, st_enrolled) VALUES ('ft',?,?,?,?,1,?)",
+            (gid, term, programs.term_start(term), started, enr))
+    conn.commit()
+    flt = filters.Filters(prog, date_field="started_date",
+                          date_from="2026-09-01", date_to="2027-08-31")
+    res = metrics.yoy_funnel(conn, prog, flt, "2026-09-23")
+    enrolled = {r["key"]: r for r in res["rows"]}["enrolled"]
+    assert enrolled["comparable"] is True
+    assert enrolled["prior"] == 0, "nobody had started their term by 23 Sept 2025"
+    assert enrolled["current"] == 0
+    conn.close()
+
+
+def test_last_years_bar_split_by_programme_adds_up(ft_db):
+    conn, prog = ft_db, programs.get("ft")
+    lo = conn.execute("SELECT MIN(started_date) d FROM applicants"
+                      " WHERE program='ft' AND started_date<>''").fetchone()["d"]
+    hi = "%s-%s-23" % (lo[:4], lo[5:7])
+    flt = filters.Filters(prog, date_field="started_date", date_from=lo, date_to=hi)
+    for r in metrics.yoy_funnel(conn, prog, flt, hi)["rows"]:
+        if r["comparable"]:
+            assert sum(r["prior_by_degree"].values()) == r["prior"], r["key"]
+            assert sum(r["current_by_degree"].values()) == r["current"], r["key"]

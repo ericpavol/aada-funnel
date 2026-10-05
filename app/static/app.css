@@ -879,3 +879,58 @@ code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11.5px;
 /* A timeline control waiting on its data: say so instead of looking dead. */
 .tlbar.busy{cursor:progress}
 .tlbar.busy .tabsm a{opacity:.6}
+/* ==================== overall funnel vs last year ====================
+   Each stage keeps its own rail and gains a thin grey bar beneath it for last
+   year at the same point, plus a column with the change in PERCENTAGE POINTS
+   of started. Points, not percent: 11.0% -> 12.2% is +1.2 pts; as a percent
+   it would read "+11%", i.e. "eleven percent more people". */
+.hero-yoy{font-size:12.5px;color:var(--ink-2);margin-top:8px}
+.hero-yoy b{font-weight:600;color:var(--ink)}
+.hero-yoy .up{color:var(--delta-up);font-weight:600;margin-left:3px}
+.hero-yoy .down{color:var(--delta-down);font-weight:600;margin-left:3px}
+/* Three numeric columns, each ONE line on the same baseline as the stage
+   name: this year | last year | change. Last year reuses .step-val so it has
+   the identical count + % shape, just muted -- the eye reads across a row and
+   down a column without either jumping. */
+.steps.has-yoy .step,.steps-head{grid-template-columns:148px 1fr 108px 82px 48px 62px;gap:10px}
+/* Six columns need the room: with last year showing, the headline column
+   narrows so the bars keep a usable length at ~1000px wide. */
+.herowrap:has(.steps.has-yoy){grid-template-columns:minmax(176px,.5fr) 2.5fr;gap:22px}
+.steps-head{display:grid;padding:0 0 4px;font:600 10px/1.4 var(--f-ui);
+  letter-spacing:.07em;text-transform:uppercase;color:var(--ink-3)}
+.steps-head .r{text-align:right}
+.rails{display:flex;flex-direction:column;gap:4px;min-width:0}
+.rails{gap:3px}
+/* Last year, same thickness as this year's rail and on the same scale. A track
+   of its own, like the rail above, so a short bar reads as short rather than
+   as a stray line. */
+.rail-prior{height:9px;border-radius:var(--r-pill);background:var(--surface-2)}
+.rail-prior i{display:block;height:100%;border-radius:var(--r-pill);
+  background:var(--ink-3);opacity:.5;min-width:2px}
+.step-prior .step-n{font-size:14px;color:var(--ink-3)}
+.step-prior .step-pct{color:var(--ink-3)}
+.step-chg{text-align:right;font-size:12px;font-weight:600;
+  font-variant-numeric:tabular-nums;white-space:nowrap;color:var(--ink-3)}
+.step-chg .up{color:var(--delta-up)}
+.step-chg .down{color:var(--delta-down)}
+.step-chg .na{font-weight:500;color:var(--ink-3)}
+/* Stages with no date column: last year is context only, so it recedes. */
+.step.yoy-na .rail-prior i{opacity:.22}
+.step.yoy-na .step-prior{opacity:.6}
+@media (max-width:900px){
+  .steps.has-yoy .step,.steps-head{grid-template-columns:100px 1fr 96px 72px 44px 54px;gap:7px}
+}
+
+
+.steps-note{margin:10px 0 0}
+
+/* Last year's bar split by programme: the same segment colours as this year,
+   drawn lighter (mixed toward the surface) so the two years never blur. */
+.rail-prior.split{display:flex;align-items:stretch;overflow:hidden}
+.rail-prior.split i{position:static;opacity:1;min-width:0;border-radius:0;flex:0 0 auto}
+.rail-prior.split i:first-child{border-radius:var(--r-pill) 0 0 var(--r-pill)}
+.rail-prior.split i:last-child{border-radius:0 var(--r-pill) var(--r-pill) 0}
+.rail-prior.split i.seg-0{background:color-mix(in oklab,var(--accent) 50%,var(--surface))}
+.rail-prior.split i.seg-1{background:color-mix(in oklab,color-mix(in oklab,var(--accent) 42%,var(--accent-fg)) 50%,var(--surface))}
+.rail-prior.split i.seg-u{background:color-mix(in oklab,#9a9a95 50%,var(--surface))}
+.step-prior .na{font-size:12px;font-weight:500}

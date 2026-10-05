@@ -86,6 +86,43 @@ def canonical_term(term):
     return t
 
 
+# When a term begins, so "enrolled by date X" can be answered even though Slate
+# sends no enrolment date: nobody can be enrolled before their term starts.
+#
+# The 1st of the start MONTH, deliberately the earliest possible day. That
+# makes the derived count an upper bound -- it can only count someone a few
+# days early, never miss them -- so when it says 0, it really is 0.
+#
+# Fall starts in AUGUST: AADA's own older label says so outright
+# ("Fall 2025 (August 2025)"). January / Spring / Winter intakes start in
+# January. A month written in brackets always wins over the season default.
+_MONTHS = {m: i for i, m in enumerate(
+    ["january", "february", "march", "april", "may", "june", "july",
+     "august", "september", "october", "november", "december"], 1)}
+_SEASON_MONTH = {"fall": 8, "autumn": 8, "january": 1, "spring": 1,
+                 "winter": 1, "summer": 6}
+_BRACKET_RE = re.compile(r"\(\s*([a-z]+)\s+(\d{4})\s*\)", re.I)
+_SEASON_RE = re.compile(r"^\s*([a-z]+)\s+(\d{4})", re.I)
+
+
+def term_start(term):
+    """'Fall 2026' -> '2026-08-01'; 'January 2027 (Spring)' -> '2027-01-01'.
+
+    '' when the term is blank or unrecognised -- an unknown start must never be
+    guessed into a date, or someone could be counted as enrolled who wasn't.
+    """
+    t = _s(term)
+    if not t:
+        return ""
+    m = _BRACKET_RE.search(t)
+    if m and m.group(1).lower() in _MONTHS:
+        return "%s-%02d-01" % (m.group(2), _MONTHS[m.group(1).lower()])
+    m = _SEASON_RE.match(t)
+    if m and m.group(1).lower() in _SEASON_MONTH:
+        return "%s-%02d-01" % (m.group(2), _SEASON_MONTH[m.group(1).lower()])
+    return ""
+
+
 # AADA added a BFA alongside the existing AOS in the 2026-09 export. Slate does
 # not send the degree as its own column: it prefixes the emphasis string
 # instead, so "BFA - Acting for Film, Television & Theatre" is the BFA, while
@@ -338,9 +375,15 @@ FT = Program(
     stage_fn=ft_stages,
     extra_stages={"enrolled": _ft_enrolled},
     channel_stage="admitted",
-    # aud_req / aud_comp / admitted / enrolled are flags with no date -- see
+    # aud_req / aud_comp / admitted are flags with no date -- see
     # Program.stage_dates. Add them here the moment Slate ships the columns.
-    stage_dates={"started": "started_date", "submitted": "submitted_date"},
+    #
+    # Enrolled has no date either, but it has a hard floor: nobody is enrolled
+    # before their term starts. `term_start` is that floor (see term_start()),
+    # so "enrolled by day X" is exact for any X before the term begins -- which
+    # covers every same-point comparison made early in a fiscal year.
+    stage_dates={"started": "started_date", "submitted": "submitted_date",
+                 "enrolled": "term_start"},
     date_fields={
         "started_date": "App Start Date",
         "submitted_date": "App Submitted Date",

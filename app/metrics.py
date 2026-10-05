@@ -175,19 +175,37 @@ def yoy_funnel(conn, program, flt, today, cohort_field=None):
             params += params_extra
         return conn.execute(sql, params).fetchone()[0]
 
+    def count_by(group_col, where_extra, params_extra, lo, hi):
+        """Same count as count(), split by `group_col` -> {value: n}."""
+        sql = ("SELECT %s AS g, COUNT(*) AS n FROM applicants WHERE " % group_col +
+               base.where +
+               " AND %s <> '' AND %s >= ? AND %s <= ?" % (field, field, field) +
+               " AND " + where_extra + " GROUP BY 1")
+        return {r["g"]: r["n"] for r in conn.execute(
+            sql, list(base.params) + [lo, hi] + params_extra)}
+
     rows = []
     for key in program.stage_keys:
         datecol = program.stage_dates.get(key)
         label = program.stage_labels[key]
         if datecol:
-            # Reached the stage, and reached it by the end of that window.
-            extra = "%s <> '' AND %s <= ?" % (datecol, datecol)
+            # Reached the stage, and reached it by the end of that window. The
+            # stage flag is required as well as the date: for most stages the
+            # date implies the flag, but `term_start` (Enrolled) is set for
+            # everyone on a term, enrolled or not.
+            extra = "st_%s = 1 AND %s <> '' AND %s <= ?" % (key, datecol, datecol)
             c = count(extra, [cur[1]], *cur)
             p = count(extra, [prior[1]], *prior)
-            rows.append({"key": key, "label": label, "comparable": True,
-                         "current": c, "prior": p,
-                         "delta": (c - p) / p if p else None,
-                         "diff": c - p})
+            row = {"key": key, "label": label, "comparable": True,
+                   "current": c, "prior": p,
+                   "delta": (c - p) / p if p else None,
+                   "diff": c - p}
+            if program.has_degree:
+                # Last year's bar is drawn split by programme, like this
+                # year's, so each year needs its own breakdown.
+                row["prior_by_degree"] = count_by("degree", extra, [prior[1]], *prior)
+                row["current_by_degree"] = count_by("degree", extra, [cur[1]], *cur)
+            rows.append(row)
         else:
             # No date: the best available prior figure is today's snapshot, which
             # is NOT a like-for-like number. Carried for context, never a delta.
@@ -243,8 +261,9 @@ def yoy_pace(conn, program, flt, cur, prior, field="started_date", stage="starte
     def series(lo, hi):
         where, params = _cohort(flt, field, lo, hi)
         rows = conn.execute(
-            "SELECT %s AS d FROM applicants WHERE %s AND %s <> '' AND %s <= ?"
-            % (datecol, where, datecol, datecol), params + [hi]).fetchall()
+            "SELECT %s AS d FROM applicants WHERE %s AND st_%s = 1"
+            " AND %s <> '' AND %s <= ?"
+            % (datecol, where, stage, datecol, datecol), params + [hi]).fetchall()
         start = _dt.date(int(lo[:4]), int(lo[5:7]), int(lo[8:10]))
         end = _dt.date(int(hi[:4]), int(hi[5:7]), int(hi[8:10]))
         n_days = (end - start).days + 1
@@ -292,17 +311,19 @@ def yoy_channels(conn, program, flt, cur, prior, field="started_date",
         rows = conn.execute(
             "SELECT p.channel c, COUNT(DISTINCT p.applicant_id) n FROM pings p"
             " WHERE p.channel <> '' AND p.applicant_id IN"
-            "   (SELECT id FROM applicants WHERE %s AND %s <> '' AND %s <= ?)"
-            " GROUP BY 1" % (where, datecol, datecol),
+            "   (SELECT id FROM applicants WHERE %s AND st_%s = 1"
+            "    AND %s <> '' AND %s <= ?)"
+            " GROUP BY 1" % (where, stage, datecol, datecol),
             params + [hi]).fetchall()
         return {r["c"]: r["n"] for r in rows}
 
     def untracked(lo, hi):
         where, params = _cohort(flt, field, lo, hi)
         return conn.execute(
-            "SELECT COUNT(*) FROM applicants WHERE %s AND %s <> '' AND %s <= ?"
+            "SELECT COUNT(*) FROM applicants WHERE %s AND st_%s = 1"
+            " AND %s <> '' AND %s <= ?"
             " AND NOT EXISTS (SELECT 1 FROM pings p WHERE p.applicant_id = applicants.id)"
-            % (where, datecol, datecol), params + [hi]).fetchone()[0]
+            % (where, stage, datecol, datecol), params + [hi]).fetchone()[0]
 
     now, was = pull(*cur), pull(*prior)
     out = []

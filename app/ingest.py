@@ -311,6 +311,7 @@ def ingest(conn, path_or_stream, program_key, filename, sha256=None):
         # programs.degree_of.
         fields["degree"] = (programs.degree_of(fields["emphasis"])
                             if program.has_degree else "")
+        fields["term_start"] = programs.term_start(fields["term"])
 
         # Dedup identity: (global_id, term, started_date) + an occurrence
         # ordinal. Term and start date never change once an application exists,
@@ -328,16 +329,17 @@ def ingest(conn, path_or_stream, program_key, filename, sha256=None):
         if existing is None:
             cur.execute(
                 "INSERT INTO applicants (program, global_id, term, country, region, city,"
-                " postal, age, emphasis, degree, bfa_pathway, decision, app_status,"
+                " postal, age, emphasis, degree, bfa_pathway, term_start, decision, app_status,"
                 " started_date,"
                 " submitted_date, completed_date, st_started, st_submitted, st_aud_req,"
                 " st_aud_comp, st_admitted, st_accepted, st_enrolled, dedup_seq,"
                 " first_upload_id,"
                 " last_upload_id)"
-                " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                 (program_key, global_id, fields["term"], fields["country"],
                  fields["region"], fields["city"], fields["postal"], fields["age"],
                  fields["emphasis"], fields["degree"], fields["bfa_pathway"],
+                 fields["term_start"],
                  fields["decision"], fields["app_status"],
                  fields["started_date"], fields["submitted_date"],
                  fields["completed_date"],
@@ -356,6 +358,7 @@ def ingest(conn, path_or_stream, program_key, filename, sha256=None):
             cur.execute(
                 "UPDATE applicants SET"
                 "  term=CASE WHEN ?<>'' THEN ? ELSE term END,"
+                "  term_start=CASE WHEN ?<>'' THEN ? ELSE term_start END,"
                 "  country=CASE WHEN ?<>'' THEN ? ELSE country END,"
                 "  region=CASE WHEN ?<>'' THEN ? ELSE region END,"
                 "  city=CASE WHEN ?<>'' THEN ? ELSE city END,"
@@ -375,7 +378,9 @@ def ingest(conn, path_or_stream, program_key, filename, sha256=None):
                 "  st_enrolled=MAX(st_enrolled,?),"
                 "  last_upload_id=?"
                 " WHERE id=?",
-                (fields["term"], fields["term"], fields["country"], fields["country"],
+                (fields["term"], fields["term"],
+                 fields["term_start"], fields["term_start"],
+                 fields["country"], fields["country"],
                  fields["region"], fields["region"], fields["city"], fields["city"],
                  fields["postal"], fields["postal"], fields["age"],
                  fields["emphasis"], fields["emphasis"],

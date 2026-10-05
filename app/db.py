@@ -63,6 +63,9 @@ CREATE TABLE IF NOT EXISTS applicants (
     degree          TEXT NOT NULL DEFAULT '',
     -- '3-year' / '4-year', blank for everyone who is not a BFA applicant.
     bfa_pathway     TEXT NOT NULL DEFAULT '',
+    -- First day of the term's start month, derived from `term`. The earliest
+    -- anyone on that term can be enrolled -- see programs.term_start.
+    term_start      TEXT NOT NULL DEFAULT '',
     decision        TEXT NOT NULL DEFAULT '',
     app_status      TEXT NOT NULL DEFAULT '',
     started_date    TEXT NOT NULL DEFAULT '',
@@ -217,6 +220,7 @@ _ADDED_COLUMNS = [
     ("applicants", "st_enrolled", "INTEGER NOT NULL DEFAULT 0"),
     ("applicants", "degree", "TEXT NOT NULL DEFAULT ''"),
     ("applicants", "bfa_pathway", "TEXT NOT NULL DEFAULT ''"),
+    ("applicants", "term_start", "TEXT NOT NULL DEFAULT ''"),
 ]
 
 
@@ -228,6 +232,7 @@ def _migrate(conn):
     _migrate_terms(conn)
     _migrate_emphasis(conn)
     _backfill_degree(conn)
+    _backfill_term_start(conn)
     conn.commit()
 
 
@@ -246,6 +251,19 @@ def _migrate_emphasis(conn):
         if new != old:
             conn.execute("UPDATE applicants SET emphasis=? WHERE emphasis=?",
                          (new, old))
+
+
+def _backfill_term_start(conn):
+    """Derive term_start for rows stored before the column existed, and keep it
+    in step if a term label is rewritten (the Winter -> Spring migration).
+    Pure function of `term`, so it costs one UPDATE per distinct term and is a
+    no-op once everything matches."""
+    from . import programs
+    for r in conn.execute("SELECT DISTINCT term, term_start FROM applicants").fetchall():
+        want = programs.term_start(r["term"])
+        if want != r["term_start"]:
+            conn.execute("UPDATE applicants SET term_start=? WHERE term=? AND term_start=?",
+                         (want, r["term"], r["term_start"]))
 
 
 def _backfill_degree(conn):

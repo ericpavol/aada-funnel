@@ -102,6 +102,12 @@
       </h1>
       <div class="figure">{{ overall.population|num }}</div>
       <div class="figure-unit">applicants in scope{% if filters.active %} · filtered{% endif %}</div>
+      {% if funnel_yoy %}
+        {% set fs = funnel_yoy.started %}
+        <div class="hero-yoy">vs <b>{{ fs.prior|num }}</b> same point last year
+          {% if fs.delta is not none %}<span class="{{ 'up' if fs.diff >= 0 else 'down' }}">{{
+            '+' if fs.diff >= 0 else '' }}{{ (fs.delta * 100)|round(0)|int }}%</span>{% endif %}</div>
+      {% endif %}
       <p class="herometa">No marketing attribution in this view — just the raw
         progression. Each step is measured against the stage before it.</p>
 
@@ -120,9 +126,25 @@
       {% endif %}
     </div>
 
-    <div class="steps">
+    <div class="steps{{ ' has-yoy' if funnel_yoy else '' }}">
+      {% if funnel_yoy %}
+        <div class="steps-head">
+          <span></span><span></span>
+          <span class="r">This year</span>
+          <span class="r" title="Same point last year: {{ funnel_yoy.window[0] }} → {{ funnel_yoy.window[1] }}">Last year</span>
+          <span class="r" title="Change in the number of people">Change</span>
+          <span class="r" title="Change in the share of Started who reached this stage, in percentage points">Conv.</span>
+        </div>
+      {% endif %}
+      {# With last year shown, both years' bars share ONE scale -- the larger
+         of the two Started counts -- so a bigger year draws a longer bar.
+         Without it each year was measured against its own Started and both
+         Started bars were full width, which hid a 563-vs-516 difference. #}
+      {% set bar_base = ([overall.counts['started'], funnel_yoy.started.prior]|max
+                         if funnel_yoy else overall.counts['started']) or 1 %}
       {% for s in overall.steps %}
-        <div class="step">
+        {% set fy = funnel_yoy.rows[s.key] if funnel_yoy else none %}
+        <div class="step{{ ' yoy-na' if fy and not fy.comparable else '' }}">
           <div class="step-name">
             <span class="idx">{{ '%02d'|format(loop.index) }}</span>
             {{ s.label }}
@@ -140,8 +162,9 @@
                reason. It also has to be drawn at all: ~21% of rows have a
                blank emphasis, so AOS + BFA alone would leave the bar visibly
                short of the total beside it. #}
-            {% set base = overall.counts['started'] or 1 %}
+            {% set base = bar_base %}
             {% set named = overall_split|sum(attribute='counts.' ~ s.key) %}
+            <div class="rails">
             <div class="rail split">
               {% for g in overall_split %}
                 <i class="seg-{{ loop.index0 }}"
@@ -151,20 +174,73 @@
               <i class="seg-u" style="width:{{ ((s.n - named) / base * 100)|round(3) }}%"
                  title="No degree selected yet: {{ (s.n - named)|num }}"></i>
             </div>
+            {% if fy and fy.comparable %}
+              {# Last year at the same point, split by programme like this
+                 year's bar -- same segment colours, a lighter shade. #}
+              {% set pb = fy.prior_by_degree %}
+              {% set pn = namespace(n=0) %}
+              {% for g in overall_split %}{% set pn.n = pn.n + pb.get(g.name, 0) %}{% endfor %}
+              {% set pnamed = pn.n %}
+              <div class="rail-prior split">
+                {% for g in overall_split %}
+                  <i class="seg-{{ loop.index0 }}" style="width:{{ ((pb.get(g.name, 0)) / bar_base * 100)|round(3) }}%"
+                     title="Last year, same point · {{ g.name }}: {{ pb.get(g.name, 0)|num }}"></i>
+                {% endfor %}
+                <i class="seg-u" style="width:{{ ((fy.prior - pnamed) / bar_base * 100)|round(3) }}%"
+                   title="Last year, same point · No degree yet: {{ (fy.prior - pnamed)|num }}"></i>
+              </div>
+            {% endif %}
+            </div>
           {% else %}
+            <div class="rails">
             <div class="rail">
-              <i style="width:{{ (s.pct_of_started * 100)|round(2) }}%;animation-delay:{{ loop.index0 * 60 }}ms"></i>
+              <i style="width:{{ (s.n / bar_base * 100)|round(2) }}%;animation-delay:{{ loop.index0 * 60 }}ms"></i>
+            </div>
+            {% if fy and fy.comparable %}
+              <div class="rail-prior"><i style="width:{{ (fy.prior / bar_base * 100)|round(2) }}%"
+                   title="Last year, same point: {{ fy.prior|num }} ({{ fy.prior_pct|pct }})"></i></div>
+            {% endif %}
             </div>
           {% endif %}
           <div class="step-val">
-            {% if not loop.first %}
-              <span class="delta down" title="lost since {{ s.prev_label }}">
-                ↓{{ s.drop_from_prev|num }}
-              </span>
-            {% endif %}
             <span class="step-n">{{ s.n|num }}</span>
             <span class="step-pct">{{ s.pct_of_started|pct }}</span>
           </div>
+          {% if fy %}
+            <div class="step-val step-prior" title="Same point last year">
+              {% if fy.comparable %}
+                <span class="step-n">{{ fy.prior|num }}</span>
+                <span class="step-pct">{{ fy.prior_pct|pct if fy.prior_pct is not none else '—' }}</span>
+              {% else %}
+                {# Never last year's figure TODAY: under a "Last year" header it
+                   reads as "at this time last year", which it is not -- e.g. 12
+                   "enrolled" who all enrolled months later. #}
+                <span class="step-pct na" title="Slate sends no date for this stage, so last year's group cannot be cut off at the same day">n/a</span>
+              {% endif %}
+            </div>
+            <div class="step-chg">
+              {% if not fy.comparable %}
+                <span class="na" title="Slate sends no date for this stage, so last year's group cannot be cut off at the same day">n/a</span>
+              {% elif fy.count_delta is none or fy.count_diff == 0 %}
+                <span class="na">—</span>
+              {% else %}
+                <span class="{{ 'up' if fy.count_diff >= 0 else 'down' }}">{{
+                  '+' if fy.count_diff >= 0 else '−' }}{{ (fy.count_delta|abs * 100)|round(0)|int }}%</span>
+              {% endif %}
+            </div>
+            <div class="step-chg">
+              {% if loop.first %}
+                <span class="na">—</span>
+              {% elif not fy.comparable %}
+                <span class="na" title="Slate sends no date for this stage, so last year's group cannot be cut off at the same day">n/a</span>
+              {% elif fy.delta_pts is none or (fy.delta_pts|abs) < 0.05 %}
+                <span class="na">—</span>
+              {% else %}
+                <span class="{{ 'up' if fy.delta_pts >= 0 else 'down' }}">{{
+                  '+' if fy.delta_pts >= 0 else '−' }}{{ '%.1f'|format(fy.delta_pts|abs) }} pts</span>
+              {% endif %}
+            </div>
+          {% endif %}
           {% if overall_split %}
             {# Per-degree counts for the same stage. Not a stacked bar: the two
                programmes are at wildly different scales (BFA is ~3% of AOS),
@@ -186,6 +262,13 @@
           {% endif %}
         </div>
       {% endfor %}
+      {% if funnel_yoy %}
+        <p class="hint steps-note">Last year is cut off at the same calendar day
+          ({{ funnel_yoy.window[1] }}). Submitted counts only applications
+          submitted <b>by this point</b> in each year — applicants often submit
+          weeks or months after starting, so both years' figures will keep
+          rising.</p>
+      {% endif %}
     </div>
   </div>
 </section>
@@ -223,43 +306,9 @@
       </div>
     {% endif %}
 
-    <div class="yoyrows">
-      {% for r in yoy.rows %}
-        {% if loop.first or (yoy.rows[loop.index0 - 1].comparable and not r.comparable) %}
-          {% if not r.comparable %}
-            <div class="yoycut"><span></span><em>no date in Slate for these — last
-              year's figure is where that group stands <b>today</b>, after another
-              twelve months</em><span></span></div>
-          {% endif %}
-        {% endif %}
-        <div class="yoyrow{{ '' if r.comparable else ' na' }}">
-          <div class="ystg">{{ r.label }}</div>
-          <div class="ybars">
-            {% set top = [r.current, r.prior, 1]|max %}
-            <div class="ybar cur" style="width:{{ (r.current / top * 100)|round(1) }}%"
-                 title="This year: {{ r.current|num }}"></div>
-            <div class="ybar pri" style="width:{{ (r.prior / top * 100)|round(1) }}%"
-                 title="Last year, same point: {{ r.prior|num }}"></div>
-          </div>
-          <div class="yn">{{ r.current|num }}</div>
-          <div class="yn pale">{{ r.prior|num }}</div>
-          <div class="ydelta">
-            {% if not r.comparable %}
-              <span class="na">n/a</span>
-            {% elif r.delta is none %}
-              <span class="na">—</span>
-            {% else %}
-              <span class="{{ 'up' if r.diff >= 0 else 'down' }}">{{
-                '+' if r.diff >= 0 else '' }}{{ (r.delta * 100)|round(0)|int }}%</span>
-            {% endif %}
-          </div>
-        </div>
-      {% endfor %}
-    </div>
-
-    <p class="hint" style="margin-top:10px">Submitted counts only applications
-      submitted <b>by this point</b> in each year. Applicants often submit weeks
-      or months after starting, so both years' figures will keep rising.</p>
+    {# The stage-by-stage table that used to sit here now lives in the
+       overall funnel above (This year / Last year / Change / Conv.), so each
+       number appears once. This section keeps pace and channels. #}
 
     {# ---- stage picker: drives the pace chart AND the channel panel ----
        Every pace-able stage is rendered below and ships in the chart payload,
