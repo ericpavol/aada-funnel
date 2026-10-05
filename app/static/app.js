@@ -1522,15 +1522,25 @@
         var i = next.years.indexOf(y);
         if (i === -1) next.years.push(y); else next.years.splice(i, 1);
       }
+      bar.classList.add("busy");
       tlCombo(next.bucket, next.measure).then(function () {
+        bar.classList.remove("busy");
         TLC.bucket = next.bucket; TLC.measure = next.measure;
         TLC.years = next.years; TLC.apps = next.apps;
         applyTimeline();
       }, function () { location.href = a.href; });
     });
 
-    // Warm the other five combinations once the page has painted.
-    setTimeout(function prefetch() {
+    // Warm the other five combinations when the pointer (or keyboard focus)
+    // first reaches the controls -- NOT on page load. Fetching on every load
+    // put five heavy requests in front of the next page asked for, which on
+    // the hosted server's single small CPU stalled a fiscal-year switch. By the
+    // time a hovering hand clicks, the combo is usually in; if not, the click
+    // waits for it (the bar shows it is busy).
+    var warmed = false;
+    function warm() {
+      if (warmed) return;
+      warmed = true;
       var queue = [];
       TLC.buckets.forEach(function (b) {
         TLC.measures.forEach(function (m) { queue.push([b, m]); });
@@ -1540,7 +1550,9 @@
         if (!item) return;
         tlCombo(item[0], item[1]).then(next, next);
       })();
-    }, 600);
+    }
+    bar.addEventListener("pointerenter", warm);
+    bar.addEventListener("focusin", warm);
   }
 
   function tlCombo(bucket, measure) {

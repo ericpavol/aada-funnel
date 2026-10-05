@@ -875,3 +875,7 @@ code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11.5px;
 /* The timeline tip's started-apps paragraph is always in the page and shown
    with the band; while hidden, its <p> must not leave a blank gap. */
 .tip-pop p:has(> [data-tl-show][hidden]:only-child){display:none}
+
+/* A timeline control waiting on its data: say so instead of looking dead. */
+.tlbar.busy{cursor:progress}
+.tlbar.busy .tabsm a{opacity:.6}

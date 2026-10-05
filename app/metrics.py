@@ -870,7 +870,7 @@ def tag_timeline(conn, program, where_sql, params, picked=None, years=None,
 
 
 def timeline_payload(conn, program, where_sql, params, bucket="week",
-                     measure="tags"):
+                     measure="tags", tl=None):
     """Everything the browser needs to redraw the tag timeline for ONE
     bucket x measure, across EVERY fiscal year, with no further requests.
 
@@ -880,8 +880,12 @@ def timeline_payload(conn, program, where_sql, params, bucket="week",
     ranks (`tag_timeline`: volume desc, ties in name order). `started` is the
     applications-started band for the same bucket, also every year.
     """
-    tl = tag_timeline(conn, program, where_sql, params, cap=False,
-                      bucket=bucket, measure=measure, year_detail=True)
+    # `tl` lets the overview hand over the result it already computed for the
+    # same filters, bucket and count over EVERY year (the default view), so
+    # the page runs this -- by far its heaviest query -- once instead of twice.
+    if tl is None or tl.get("year_detail") is None:
+        tl = tag_timeline(conn, program, where_sql, params, cap=False,
+                          bucket=bucket, measure=measure, year_detail=True)
     ents = {}
     for sv in tl["series"]:
         e = ents.setdefault(sv["group"], {"name": sv["group"],

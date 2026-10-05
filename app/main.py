@@ -593,6 +593,11 @@ def overview(request: Request):
         # instantly instead of costing a ~0.45s page load. All 31 entities are
         # 1.3 KB monthly / 18.4 KB daily against a 182 KB page, so the payload
         # was never the constraint I assumed it was.
+        # Every year ticked (the default) means this query is the SAME one the
+        # in-place controls need, so ask for the per-year detail now and reuse
+        # it below rather than running the timeline's heavy query twice. That
+        # double run was most of the page cost on FY 2025/26, the largest year.
+        tl_every_year = bool(all_years) and set(sel_years) == set(all_years)
         tl = metrics.tag_timeline(
             conn, program, flt.where, flt.params,
             picked=None, cap=False,
@@ -600,7 +605,9 @@ def overview(request: Request):
             select_none=(not sel_years and all_years),
             bucket=q.get("tl_bucket", "week"),
             measure=q.get("tl_measure", "tags"),
+            year_detail=tl_every_year,
         )
+        tl_full = tl
         # Group the flat (entity x fiscal year) series into one record per
         # entity, ordered by the canonical rank the client slices on.
         tl_ent = {}
@@ -636,14 +643,15 @@ def overview(request: Request):
         # The four timeline controls (bucket, count, started-apps band, fiscal
         # year) switch in place. This view's bucket x measure ships with EVERY
         # year, so the year chips are instant from first paint; the other five
-        # combinations are fetched in the background right after load from
-        # /timeline.json, so they are ready before anyone clicks. Shipping all
-        # six inline was measured at ~216 KB and +1.2s on "All time" -- the
-        # background fetch keeps first paint as fast as it was.
+        # combinations come from /timeline.json once the pointer reaches the
+        # controls (see app.js). Shipping all six inline measured ~216 KB and
+        # +1.2s on "All time"; fetching them on every page load queued five
+        # heavy requests in front of whatever page was asked for next.
         tl_client = {
             "combo": metrics.timeline_payload(
                 conn, program, flt.where, flt.params,
-                bucket=tl["bucket"], measure=tl["measure"]),
+                bucket=tl["bucket"], measure=tl["measure"],
+                tl=tl_full if tl_every_year else None),
             "bucket": tl["bucket"], "measure": tl["measure"],
             "years": [int(y) for y in sel_years],
             "all_years": [int(y) for y in all_years],
