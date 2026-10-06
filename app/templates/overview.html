@@ -214,13 +214,14 @@
           {% endif %}
           <div class="step-val">
             <span class="step-n">{{ s.n|num }}</span>
-            <span class="step-pct">{{ s.pct_of_started|pct }}</span>
+            {# Started is the base, always 100% -- no information in it. #}
+            {% if not loop.first %}<span class="step-pct">{{ s.pct_of_started|pct }}</span>{% endif %}
           </div>
           {% if fy %}
             <div class="step-val step-prior" title="Same point last year">
               {% if fy.comparable %}
                 <span class="step-n">{{ fy.prior|num }}</span>
-                <span class="step-pct">{{ fy.prior_pct|pct if fy.prior_pct is not none else '—' }}</span>
+                {% if not loop.first %}<span class="step-pct">{{ fy.prior_pct|pct if fy.prior_pct is not none else '—' }}</span>{% endif %}
               {% else %}
                 {# Never last year's figure TODAY: under a "Last year" header it
                    reads as "at this time last year", which it is not -- e.g. 12
