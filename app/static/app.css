@@ -949,3 +949,7 @@ code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11.5px;
 .spendcov{margin:4px 0 10px}
 .spendcov b{color:var(--ink-2);font-weight:600}
 .spendwarn{margin:0 0 12px}
+
+/* Fixed-width share slot, so every stage's NUMBER lands at the same x --
+   "100.0%", "12.2%", "1.7%" and Started's blank slot all take the same room. */
+.steps .step-pct{min-width:42px;text-align:left}

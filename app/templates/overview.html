@@ -209,13 +209,15 @@
           <div class="step-val">
             <span class="step-n">{{ s.n|num }}</span>
             {# Started is the base, always 100% -- no information in it. #}
-            {% if not loop.first %}<span class="step-pct">{{ s.pct_of_started|pct }}</span>{% endif %}
+            {# Started's share is always 100%, so it is left blank -- but the
+               slot stays, so its number lines up with the rows below. #}
+            <span class="step-pct">{% if not loop.first %}{{ s.pct_of_started|pct }}{% endif %}</span>
           </div>
           {% if fy %}
             <div class="step-val step-prior" title="Same point last year">
               {% if fy.comparable %}
                 <span class="step-n">{{ fy.prior|num }}</span>
-                {% if not loop.first %}<span class="step-pct">{{ fy.prior_pct|pct if fy.prior_pct is not none else '—' }}</span>{% endif %}
+                <span class="step-pct">{% if not loop.first %}{{ fy.prior_pct|pct if fy.prior_pct is not none else '—' }}{% endif %}</span>
               {% else %}
                 {# Never last year's figure TODAY: under a "Last year" header it
                    reads as "at this time last year", which it is not -- e.g. 12
