@@ -363,6 +363,12 @@
           <span class="hint"><i class="paiddot"></i> paid</span>
         </div>
         <div class="ychans">
+          {# Column labels, so "91 → 184" says which side is which year. #}
+          <div class="ychan yhead">
+            <span></span><span></span>
+            <span class="ycd">Change</span>
+            <span class="ycv">Last yr → This yr</span>
+          </div>
           {% set top = st.channels|map(attribute='current')|max %}
           {% for c in st.channels %}
             <div class="ychan{{ ' nou' if c.is_no_utm else '' }}">

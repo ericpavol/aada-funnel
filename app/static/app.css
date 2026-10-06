@@ -822,7 +822,7 @@ code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11.5px;
   padding-top:16px;border-top:1px solid var(--ring-2)}
 .chartbox.sm{height:190px}
 .ychans{display:flex;flex-direction:column;gap:6px}
-.ychan{display:grid;grid-template-columns:1fr 70px 52px 76px;gap:9px;
+.ychan{display:grid;grid-template-columns:1fr 70px 52px 104px;gap:9px;
   align-items:center;font-size:12px}
 .ycn{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .ycbar{height:6px;background:var(--surface-2);border-radius:var(--r-pill);
@@ -940,3 +940,8 @@ code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11.5px;
 .rail-prior.na{background:transparent;
   border:1px dashed color-mix(in oklab,var(--ink-3) 55%,transparent);
   box-sizing:border-box}
+
+/* Column labels over the YoY channel list. */
+.ychan.yhead{font:600 10px/1.4 var(--f-ui);letter-spacing:.07em;
+  text-transform:uppercase;color:var(--ink-3);padding-bottom:2px}
+.ychan.yhead .ycd,.ychan.yhead .ycv{color:var(--ink-3);font-weight:600;white-space:nowrap}
