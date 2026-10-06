@@ -102,12 +102,6 @@
       </h1>
       <div class="figure">{{ overall.population|num }}</div>
       <div class="figure-unit">applicants in scope{% if filters.active %} · filtered{% endif %}</div>
-      {% if funnel_yoy %}
-        {% set fs = funnel_yoy.started %}
-        <div class="hero-yoy">vs <b>{{ fs.prior|num }}</b> same point last year
-          {% if fs.delta is not none %}<span class="{{ 'up' if fs.diff >= 0 else 'down' }}">{{
-            '+' if fs.diff >= 0 else '' }}{{ (fs.delta * 100)|round(0)|int }}%</span>{% endif %}</div>
-      {% endif %}
       <p class="herometa">No marketing attribution in this view — just the raw
         progression. Each step is measured against the stage before it.</p>
 
