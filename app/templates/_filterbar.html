@@ -29,7 +29,6 @@
         No date filter — every application ever loaded
       {%- elif filters.date_field -%}
         {{ filters.date_from or '…' }} → {{ filters.date_to or '…' }}
-        {%- if fy_active is not none %} · fiscal year runs 1 Sept → 31 Aug{% endif %}
       {%- endif -%}
       {%- if data_through %} · <b class="thru" title="The latest application start date in the uploaded data for this period. Nothing after this day has been exported yet.">data through {{ data_through }}</b>
       {%- elif filters.date_field %} · <b class="thru">no data in this period yet</b>{% endif -%}
