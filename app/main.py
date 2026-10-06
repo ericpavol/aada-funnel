@@ -301,9 +301,25 @@ def _ctx(request, conn, program, flt, **extra):
         "                ELSE CAST(substr(started_date,1,4) AS INTEGER) - 1 END fy"
         " FROM applicants WHERE program=? AND started_date <> ''"
         " ORDER BY fy DESC", (program.key,))]
+    # Latest application start date inside the selected date range -- where the
+    # data for this period actually stops. A fiscal year runs to next August,
+    # but the newest export may only reach a few weeks in, and nothing on the
+    # page should be read as covering days that have not been exported yet.
+    # Only the date range is applied (not the other filters): this is about
+    # how far the uploaded export goes, not about any one slice of it.
+    dsql = "SELECT MAX(started_date) FROM applicants WHERE program=? AND started_date <> ''"
+    dargs = [program.key]
+    if flt.date_field == filters.DEFAULT_DATE_FIELD:
+        if flt.date_from:
+            dsql += " AND started_date >= ?"; dargs.append(flt.date_from)
+        if flt.date_to:
+            dsql += " AND started_date <= ?"; dargs.append(flt.date_to)
+    data_through = conn.execute(dsql, dargs).fetchone()[0]
+
     ctx = {
         "request": request,
         "program": program,
+        "data_through": data_through,
         # THE channel -> palette slot map, shared by every chart. Channels
         # past the 8 validated hues are absent from it deliberately; the client
         # draws those in neutral grey rather than reusing a major channel's
