@@ -934,3 +934,9 @@ code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11.5px;
 .rail-prior.split i.seg-1{background:color-mix(in oklab,color-mix(in oklab,var(--accent) 42%,var(--accent-fg)) 50%,var(--surface))}
 .rail-prior.split i.seg-u{background:color-mix(in oklab,#9a9a95 50%,var(--surface))}
 .step-prior .na{font-size:12px;font-weight:500}
+
+/* Last year unknown for this stage (no date from Slate): an empty dashed
+   track in the bar's place, so every row keeps its shape. */
+.rail-prior.na{background:transparent;
+  border:1px dashed color-mix(in oklab,var(--ink-3) 55%,transparent);
+  box-sizing:border-box}

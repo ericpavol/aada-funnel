@@ -189,6 +189,11 @@
                 <i class="seg-u" style="width:{{ ((fy.prior - pnamed) / bar_base * 100)|round(3) }}%"
                    title="Last year, same point · No degree yet: {{ (fy.prior - pnamed)|num }}"></i>
               </div>
+            {% elif fy %}
+              {# No date from Slate, so last year's count at this point is
+                 unknown. An empty dashed track keeps the row's shape and says
+                 "nothing to show" rather than looking like a missing bar. #}
+              <div class="rail-prior na" title="Slate sends no date for this stage, so last year's number at this point is unknown"></div>
             {% endif %}
             </div>
           {% else %}
@@ -199,6 +204,11 @@
             {% if fy and fy.comparable %}
               <div class="rail-prior"><i style="width:{{ (fy.prior / bar_base * 100)|round(2) }}%"
                    title="Last year, same point: {{ fy.prior|num }} ({{ fy.prior_pct|pct }})"></i></div>
+            {% elif fy %}
+              {# No date from Slate, so last year's count at this point is
+                 unknown. An empty dashed track keeps the row's shape and says
+                 "nothing to show" rather than looking like a missing bar. #}
+              <div class="rail-prior na" title="Slate sends no date for this stage, so last year's number at this point is unknown"></div>
             {% endif %}
             </div>
           {% endif %}

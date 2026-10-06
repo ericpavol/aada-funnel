@@ -331,7 +331,12 @@ from `yoy_funnel`; the YoY section further down no longer repeats a stage table
   year's bar is the same thickness, split by programme in lighter shades of the
   same segment colours.
 * **A stage that cannot be cut off at the same day shows n/a in Last year**,
-  with no bar. Never last year's figure *today* under a "Last year" header: it
+  and an empty dashed track where the bar would be, so the row keeps its shape
+  without implying a number. Not 0: Eric asked (2026-10-06) whether n/a should
+  read 0 like Enrolled. It should not — Enrolled is provably 0 before the term
+  starts, but audition and admit can happen within days (this year's group had
+  9 audition requests and 1 audition complete inside the same 23 days), so a 0
+  for last year would invent a 9-vs-0 "win". Never last year's figure *today* under a "Last year" header: it
   read as "at this time last year" — e.g. "12 enrolled" who in fact all
   enrolled months later (11 on Fall 2026, 1 on January 2026).
 * The "↓453" drop-from-previous chips were removed from the funnel (Eric: they
