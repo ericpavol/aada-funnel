@@ -2333,3 +2333,16 @@ def test_last_years_bar_split_by_programme_adds_up(ft_db):
         if r["comparable"]:
             assert sum(r["prior_by_degree"].values()) == r["prior"], r["key"]
             assert sum(r["current_by_degree"].values()) == r["current"], r["key"]
+
+
+def test_spend_coverage_flags_a_platform_that_ends_before_the_slate_data():
+    from app import main as _main
+    conn = db.connect(":memory:")
+    for plat, month in (("google", "2026-07"), ("meta", "2026-05")):
+        conn.execute("INSERT INTO spend (program, platform, month, cost) VALUES ('ft',?,?,1)",
+                     (plat, month))
+    conn.commit()
+    cov = {c["platform"]: c for c in _main._spend_coverage(conn, programs.get("ft"), "2026-06-15")}
+    assert cov["Meta Ads"]["behind"] is True and cov["Meta Ads"]["label"] == "May 2026"
+    assert cov["Google Ads"]["behind"] is False
+    conn.close()

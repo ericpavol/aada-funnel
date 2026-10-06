@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block title %}{{ program.label }} funnel — AADA{% endblock %}
 
-{% from "_macros.html" import tip, series_tree with context %}
+{% from "_macros.html" import tip, series_tree, spend_coverage with context %}
 
 {% macro stage_pick(param, current, anchor) %}
 {# Per-card target stage — this control drives ONLY the chart it sits in.
@@ -491,8 +491,10 @@
     </div>
   </div>
 
+  {{ spend_coverage(cost, data_through) }}
   {% if not cost.has_spend %}
-    <p class="sub">No media spend loaded. Add a Google Ads or Meta export on the
+    <p class="sub">{{ 'No media spend for this period yet.' if cost.coverage else 'No media spend loaded.' }}
+      Add a Google Ads or Meta export on the
       <a href="/uploads?{{ qs(filters) }}">Data</a> tab to see cost per stage by channel.</p>
   {% else %}
     {# Every stage, including Started: cost per started app is the headline number

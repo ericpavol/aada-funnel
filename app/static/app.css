@@ -944,3 +944,8 @@ code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11.5px;
 
 /* "data through …" in the filter bar's date line. */
 .thru{font-weight:600;color:var(--ink-2)}
+
+/* Spend vs Slate coverage line on the cost card and Cost tab. */
+.spendcov{margin:4px 0 10px}
+.spendcov b{color:var(--ink-2);font-weight:600}
+.spendwarn{margin:0 0 12px}

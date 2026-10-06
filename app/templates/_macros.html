@@ -97,3 +97,29 @@
 </div>
 {% endmacro %}
 
+
+
+{% macro spend_coverage(cost, data_through) %}
+{# Where each platform's spend stops vs. where the Slate data stops. Cost per
+   stage is spend / people, so spend that ends before the applicants do makes a
+   platform look cheaper than it is -- silently. Shown on the overview card and
+   the Cost tab, with or without spend in the selected period. #}
+{% if cost.coverage or data_through %}
+  <p class="hint spendcov">
+    {%- for c in cost.coverage -%}
+      {{ c.platform }} spend through <b>{{ c.label }}</b> ·{{ ' ' }}
+    {%- endfor -%}
+    Slate data through <b>{{ data_through or '—' }}</b>
+  </p>
+  {% set behind = cost.coverage|selectattr('behind')|list %}
+  {% if behind and cost.has_spend %}
+    <div class="note warn spendwarn">
+      <b>Spend and applications end on different dates.</b>
+      {% for c in behind %}{{ c.platform }} spend ends in {{ c.label }}{{ ', ' if not loop.last }}{% endfor %},
+      but the Slate data runs to {{ data_through }}. People who applied after that
+      are counted with no spend behind them, so cost per stage reads
+      <b>lower than it really is</b>. Upload newer spend to fix it.
+    </div>
+  {% endif %}
+{% endif %}
+{% endmacro %}

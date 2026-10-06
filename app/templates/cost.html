@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block title %}Media cost — AADA{% endblock %}
 
-{% from "_macros.html" import tip, series_tree with context %}
+{% from "_macros.html" import tip, series_tree, spend_coverage with context %}
 
 {% macro money(v, dp=0) %}{% if v is none %}<span class="dash">—</span>{% else %}${{ '{:,.{}f}'.format(v, dp) }}{% endif %}{% endmacro %}
 
@@ -12,6 +12,7 @@
       <div class="eyebrow">Media cost</div>
       <h2 class="display">No spend loaded <span class="serif-it">yet</span></h2>
     </div></div>
+    {{ spend_coverage(cost, data_through) }}
     <p class="sub">Upload a Google Ads campaign report or a Meta Ads raw data report
       on the <a href="/uploads?{{ qs(filters) }}">Data</a> tab. Include a
       <b>Month</b> column so cost can follow the date filter and be charted over
@@ -28,6 +29,7 @@
         What acquisition <span class="serif-it">costs</span>
       </h1>
       <div class="figure">{{ money(cost.total_cost) }}</div>
+      {{ spend_coverage(cost, data_through) }}
       <div class="figure-unit">paid media
         {%- if cost.months %} · {{ cost.months|length }} month{{ '' if cost.months|length == 1 else 's' }}
         ({{ cost.months[0] }} → {{ cost.months[-1] }}){% endif %}</div>
