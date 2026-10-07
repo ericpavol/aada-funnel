@@ -2492,3 +2492,50 @@ def test_chat_is_off_on_the_hosted_site_unless_switched_on(monkeypatch):
     monkeypatch.delenv("RENDER")
     monkeypatch.delenv("AADA_CHAT")
     assert "chatFab" in c.get("/?program=ft").text
+
+
+def test_utm_csv_exports_every_value_for_the_current_filters(tmp_path, monkeypatch):
+    import csv, io, re
+    from starlette.testclient import TestClient
+    from app import main as _main
+    dbpath = str(tmp_path / "utm.db")
+    conn = db.connect(dbpath)
+    ingest.ingest(conn, FT_FILE, "ft", "ft.xlsx", "")
+    conn.close()
+    monkeypatch.setattr(_main, "DB_PATH", dbpath)
+    c = TestClient(_main.app)
+
+    r = c.get("/utm.csv?program=ft&dates=all&field=content")
+    assert r.status_code == 200
+    assert r.headers["content-type"].startswith("text/csv")
+    assert "attachment" in r.headers["content-disposition"]
+    rows = list(csv.reader(io.StringIO(r.text.lstrip("﻿"))))
+    assert rows[0][0] == "UTM Content" and rows[1][0] == "All applicants"
+    page = c.get("/utm?program=ft&dates=all&field=content&limit=all").text
+    distinct = int(re.search(r"([\d,]+) distinct values", page).group(1).replace(",", ""))
+    assert len(rows) - 2 == distinct, "CSV must carry every value, not the on-screen top N"
+
+    # Follows the filters: narrowing to one stage shrinks the total.
+    narrow = list(csv.reader(io.StringIO(
+        c.get("/utm.csv?program=ft&dates=all&field=content&stage=admitted").text.lstrip("﻿"))))
+    assert int(narrow[1][1]) < int(rows[1][1])
+
+
+def test_utm_csv_neutralises_formula_values():
+    from app.main import _csv_cell
+    for v in ("=HYPERLINK(\"x\")", "+1", "-2", "@SUM(A1)"):
+        assert _csv_cell(v).startswith("'")
+    assert _csv_cell("start-BFA-application") == "start-BFA-application"
+    assert _csv_cell(12) == 12
+
+
+def test_utm_page_can_show_all_values(tmp_path, monkeypatch):
+    from starlette.testclient import TestClient
+    from app import main as _main
+    dbpath = str(tmp_path / "utm2.db")
+    conn = db.connect(dbpath)
+    ingest.ingest(conn, FT_FILE, "ft", "ft.xlsx", "")
+    conn.close()
+    monkeypatch.setattr(_main, "DB_PATH", dbpath)
+    page = TestClient(_main.app).get("/utm?program=ft&dates=all&field=content&limit=all").text
+    assert "showing all" in page and "more value(s) not shown" not in page

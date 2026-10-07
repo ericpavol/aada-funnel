@@ -21,10 +21,14 @@
         <div class="eyebrow">Raw UTM values</div>
         <h1 class="display">Top {{ breakdown.label }} by <span class="serif-it">stage</span></h1>
         <div class="sub" style="margin-top:5px">
-          {{ breakdown.distinct|num }} distinct values · showing top {{ limit }},
+          {{ breakdown.distinct|num }} distinct values · showing {{ 'all' if limit == 'all' else 'top ' ~ limit }},
           ranked by {{ program.stage_labels[program.channel_stage] }}
         </div>
       </div>
+      {# The export follows the filter bar and the field tab; it carries every
+         value, not just the top N on screen. #}
+      <a class="btn ghost sm" href="/utm.csv?{{ qs(filters, field=field) }}" download
+         title="All {{ breakdown.distinct|num }} values for the current filters, as a spreadsheet">Download CSV</a>
     </div>
 
     <div class="tabsm" style="margin-bottom:9px">
@@ -34,9 +38,9 @@
       {% endfor %}
     </div>
     <div class="tabsm" style="margin-bottom:9px">
-      {% for n in [10, 20, 50, 100] %}
+      {% for n in [10, 20, 50, 100, 'all'] %}
         <a class="{{ 'on' if n == limit else '' }}"
-           href="/utm?{{ qs(filters, field=field, limit=n) }}">top {{ n }}</a>
+           href="/utm?{{ qs(filters, field=field, limit=n) }}">{{ 'All' if n == 'all' else 'top ' ~ n }}</a>
       {% endfor %}
     </div>
 

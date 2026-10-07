@@ -794,20 +794,93 @@ def utm_detail(request: Request):
         field = request.query_params.get("field", "content")
         if field not in metrics.UTM_FIELDS:
             field = "content"
-        try:
-            limit = max(5, min(100, int(request.query_params.get("limit", 20))))
-        except ValueError:
-            limit = 20
+        # "all" shows every value; otherwise a top-N between 5 and 100.
+        raw_limit = request.query_params.get("limit", "20")
+        if raw_limit == "all":
+            limit = "all"
+        else:
+            try:
+                limit = max(5, min(100, int(raw_limit)))
+            except ValueError:
+                limit = 20
 
         apps, flags = metrics.load_population(conn, program, flt.where, flt.params)
         pings = metrics.load_pings(conn, [a["id"] for a in apps])
-        breakdown = metrics.top_utm_breakdown(program, apps, flags, pings, field, limit)
+        breakdown = metrics.top_utm_breakdown(
+            program, apps, flags, pings, field, 10 ** 9 if limit == "all" else limit)
         after = metrics.post_submission_touches(program, apps, flags, pings)
         return templates.TemplateResponse("utm.html", _ctx(
             request, conn, program, flt,
             breakdown=breakdown, field=field, limit=limit,
             utm_fields=metrics.UTM_FIELDS, after=after,
         ))
+    finally:
+        conn.close()
+
+
+def _csv_cell(v):
+    """A value safe to open in Excel/Sheets.
+
+    UTM strings arrive in links anyone can craft, so a value such as
+    "=HYPERLINK(...)" would run as a formula when the file is opened. A leading
+    apostrophe makes the spreadsheet treat it as text (OWASP CSV injection).
+    """
+    if isinstance(v, str) and v[:1] in ("=", "+", "-", "@", "\t", "\r"):
+        return "'" + v
+    return v
+
+
+@app.get("/utm.csv")
+def utm_csv(request: Request):
+    """The "Top <field> by stage" table as CSV, for the page's current filters.
+
+    Every value, not just the top N shown on screen -- the on-screen limit is a
+    display choice, and an export that silently stopped at 20 rows would look
+    complete when it is not. Same any-touch counting as the page: a person is
+    counted under every value they carry, so the rows overlap and must not be
+    summed (the first data row is the real total).
+    """
+    import csv
+    import io
+    from fastapi.responses import Response
+    conn = get_conn()
+    try:
+        program, flt = _resolve(request)
+        field = request.query_params.get("field", "content")
+        if field not in metrics.UTM_FIELDS:
+            field = "content"
+        apps, flags = metrics.load_population(conn, program, flt.where, flt.params)
+        pings = metrics.load_pings(conn, [a["id"] for a in apps])
+        b = metrics.top_utm_breakdown(program, apps, flags, pings, field, limit=10 ** 9)
+        stages = program.stage_keys[1:]
+
+        buf = io.StringIO()
+        w = csv.writer(buf)
+        head = [b["label"], "Started App (Touches)"]
+        for k in stages:
+            head += [program.stage_labels[k] + " #", program.stage_labels[k] + " % of value"]
+        w.writerow(head)
+        total = ["All applicants", b["totals"]["started"]]
+        for k in stages:
+            st = b["totals"]["started"]
+            total += [b["totals"][k], round(100.0 * b["totals"][k] / st, 1) if st else ""]
+        w.writerow(total)
+        for r in b["rows"]:
+            row = [_csv_cell(r["value"]), r["n"]]
+            for k in stages:
+                row += [r["counts"][k], round(100.0 * r["within_pct"][k], 1)]
+            w.writerow(row)
+
+        span = ("all-time" if not flt.date_field else
+                "FY%s-%s" % (filters.fiscal_year_of(flt.date_from), str(filters.fiscal_year_of(flt.date_from) + 1)[2:])
+                if flt.date_from and (flt.date_from, flt.date_to) ==
+                filters.fiscal_range(filters.fiscal_year_of(flt.date_from))
+                else "%s_to_%s" % (flt.date_from or "start", flt.date_to or "end"))
+        name = "aada-%s-utm-%s-by-stage-%s%s.csv" % (
+            program.key, field, span, "-filtered" if flt.active and len(flt.summary().split(" · ")) > 1 else "")
+        # UTF-8 with a BOM so Excel shows accented characters correctly.
+        return Response("\ufeff" + buf.getvalue(), media_type="text/csv; charset=utf-8",
+                        headers={"Content-Disposition": 'attachment; filename="%s"' % name})
     finally:
         conn.close()
 
