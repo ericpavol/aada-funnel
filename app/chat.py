@@ -329,6 +329,20 @@ def run_tool(conn, name, args, page):
 # The loop
 # ---------------------------------------------------------------------------
 
+def enabled():
+    """Whether the chat exists at all on this server.
+
+    Off on the hosted site by default (Eric, 2026-10-07: chat stays on dev, not
+    live) -- Render sets RENDER=true on every service. On anywhere else, i.e.
+    local dev. AADA_CHAT=1 switches it on regardless; AADA_CHAT=0 off. Kept as
+    a switch rather than a branch so dev -> main merges stay safe.
+    """
+    flag = os.environ.get("AADA_CHAT")
+    if flag in ("0", "1"):
+        return flag == "1"
+    return not os.environ.get("RENDER")
+
+
 def configured():
     return bool(os.environ.get("ANTHROPIC_API_KEY") or os.environ.get("ANTHROPIC_AUTH_TOKEN"))
 

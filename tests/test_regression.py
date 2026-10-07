@@ -2477,3 +2477,18 @@ def test_chat_endpoint_says_so_when_no_api_key(monkeypatch):
     monkeypatch.delenv("ANTHROPIC_AUTH_TOKEN", raising=False)
     r = TestClient(_main.app).post("/chat", json={"question": "hi"})
     assert r.status_code == 503 and "ANTHROPIC_API_KEY" in r.json()["error"]
+
+
+def test_chat_is_off_on_the_hosted_site_unless_switched_on(monkeypatch):
+    from starlette.testclient import TestClient
+    from app import main as _main
+    monkeypatch.delenv("AADA_CHAT", raising=False)
+    monkeypatch.setenv("RENDER", "true")
+    c = TestClient(_main.app)
+    assert "chatFab" not in c.get("/?program=ft").text
+    assert c.post("/chat", json={"question": "hi"}).status_code == 404
+    monkeypatch.setenv("AADA_CHAT", "1")
+    assert "chatFab" in c.get("/?program=ft").text
+    monkeypatch.delenv("RENDER")
+    monkeypatch.delenv("AADA_CHAT")
+    assert "chatFab" in c.get("/?program=ft").text

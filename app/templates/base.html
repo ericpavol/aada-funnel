@@ -103,6 +103,7 @@
 </div>
 </main>
 
+{% if chat_enabled %}
 {# Ask-the-data chat, on every page. Answers come from the app's own totals via
    tools -- see app/chat.py. Conversation lives in this tab only. #}
 <button class="chat-fab" id="chatFab" type="button" aria-controls="chatPanel" aria-expanded="false">
@@ -136,5 +137,6 @@
   </form>
 </section>
 <script src="{{ asset('chat.js') }}" defer></script>
+{% endif %}
 </body>
 </html>

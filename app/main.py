@@ -353,6 +353,7 @@ def _ctx(request, conn, program, flt, **extra):
         "request": request,
         "program": program,
         "data_through": data_through,
+        "chat_enabled": chat.enabled(),
         # THE channel -> palette slot map, shared by every chart. Channels
         # past the 8 validated hues are absent from it deliberately; the client
         # draws those in neutral grey rather than reusing a major channel's
@@ -973,6 +974,8 @@ def chat_endpoint(payload: dict = Body(...)):
     Only aggregates are sent to the model -- see app/chat.py."""
     from fastapi.responses import JSONResponse
     import anthropic
+    if not chat.enabled():
+        return JSONResponse({"error": "Not found"}, status_code=404)
     if not chat.configured():
         return JSONResponse({"error": "Chat isn't switched on yet: the server has no "
                              "ANTHROPIC_API_KEY. Add it in Render under Environment."},

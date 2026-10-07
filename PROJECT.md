@@ -58,7 +58,7 @@ Summer: 4,483 → 954 → 387.
 FY 2025/26 paid media: **$288,357** (Google $140,222 · Meta $148,135).
 Blended first-touch cost per started app ≈ **$51**.
 
-**102 tests** pass against the real sample files. If a change moves any canonical
+**103 tests** pass against the real sample files. If a change moves any canonical
 number above, that is a regression until proven otherwise.
 
 ---
@@ -528,6 +528,14 @@ age band, channel touched). Totals only — see ground rule 1.
   model reply can't inject markup.
 * Server-side fallback (`fallbacks: "default"`) is on, so a policy decline is
   retried on a suitable model inside the same call rather than failing.
+* **Off on the live site** (Eric, 2026-10-07: "leave the chat bot on dev, not
+  live"). `chat.enabled()` is false wherever Render's `RENDER` env var is set,
+  true elsewhere, and `AADA_CHAT=1` / `AADA_CHAT=0` overrides it. That way the
+  code can ride along on ordinary dev -> main merges without appearing live.
+  To switch it on live later: add `ANTHROPIC_API_KEY` **and** `AADA_CHAT=1` in
+  Render's Environment — and only once Eric says so.
+* Eric's working answer for now is to ask Claude Code directly, which reads the
+  local copy of the same exports — no key, no per-question bill.
 
 ## Analytical decisions worth not re-litigating
 
