@@ -600,6 +600,42 @@ def series_tree(entries):
     return out
 
 
+def timeline_entity_counts(tl, years=None):
+    """Per-entity count for the series picker, matching the chart's view:
+    the page filters, the ticked fiscal years and the chosen Count.
+
+    Tags add up across years, so they are summed from the lines. Distinct
+    people do not -- one person in two years is one person -- so they come
+    from the per-entity year bitmasks in `year_detail`.
+    """
+    detail = tl.get("year_detail") or {}
+    ys = set(years) if years is not None else set(detail.get("year_index", []))
+    if tl.get("measure") == "people" and detail:
+        yi = detail["year_index"]
+        bits = 0
+        for y in ys:
+            if y in yi:
+                bits |= 1 << yi.index(y)
+        return {g: sum(n for m, n in ms.items() if int(m) & bits)
+                for g, ms in detail.get("entity_people_masks", {}).items()}
+    out = defaultdict(int)
+    for sv in tl["series"]:
+        if sv["fy"] in ys:
+            out[sv["group"]] += sv["total"]
+    return dict(out)
+
+
+def timeline_tree_counted(facets, counts):
+    """The timeline picker tree with counts taken from the current view rather
+    than all-time tag volume. Every channel stays listed (at 0 if absent from
+    this view) so the picker never loses a row a user may want to tick."""
+    entries = {v: counts.get(v, 0) for v, _n in facets["channels"]}
+    for c, v, _n in facets["subs"]:
+        name = taxonomy.sub_name(c, v)
+        entries[name] = counts.get(name, 0)
+    return series_tree(entries)
+
+
 def timeline_tree(facets):
     """Series tree for the timeline, counted in tag volume."""
     entries = {v: n for v, n in facets["channels"]}
@@ -859,12 +895,28 @@ def tag_timeline(conn, program, where_sql, params, picked=None, years=None,
                     m |= bit.get(int(y), 0)
             if m:
                 masks[m] += 1
+        # The same year-mask trick per entity, for the series picker's counts:
+        # "Distinct people" next to a channel must count each person once
+        # however many of the ticked years they appear in.
+        ent_masks = defaultdict(lambda: defaultdict(int))
+        for r in conn.execute(
+                cte + " SELECT grp, applicant_id, GROUP_CONCAT(DISTINCT fyear) AS ys"
+                " FROM ent WHERE " + " AND ".join(head_where) +
+                " GROUP BY grp, applicant_id", head_args):
+            m = 0
+            for y in (r["ys"] or "").split(","):
+                if y:
+                    m |= bit.get(int(y), 0)
+            if m:
+                ent_masks[r["grp"]][m] += 1
         detail = {
             "year_index": year_index,
             "by_year": {y: {"tags": per_year_tags.get(y, 0),
                             "approx": approx_by_year.get(y, 0)}
                         for y in year_index},
             "people_masks": {str(m): n for m, n in masks.items()},
+            "entity_people_masks": {g: {str(m): n for m, n in ms.items()}
+                                    for g, ms in ent_masks.items()},
         }
 
     return {
@@ -921,6 +973,7 @@ def timeline_payload(conn, program, where_sql, params, bucket="week",
         "year_index": detail.get("year_index", []),
         "by_year": {str(k): v for k, v in detail.get("by_year", {}).items()},
         "people_masks": detail.get("people_masks", {}),
+        "entity_people_masks": detail.get("entity_people_masks", {}),
         "started": started["series"],
         "limit": 8,
     }

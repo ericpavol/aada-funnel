@@ -654,9 +654,16 @@ def overview(request: Request):
             select_none=(not sel_years and all_years),
             bucket=q.get("tl_bucket", "week"),
             measure=q.get("tl_measure", "tags"),
-            year_detail=tl_every_year,
+            # Always: the series picker's counts need the per-year detail even
+            # when only some years are ticked.
+            year_detail=True,
         )
         tl_full = tl
+        # The picker's numbers follow the chart: page filters, ticked years,
+        # and the chosen Count. They used to be all-time tag volume whatever
+        # was selected, so they never matched the lines above them.
+        tl_tree = metrics.timeline_tree_counted(
+            tl_facets, metrics.timeline_entity_counts(tl_full, sel_years))
         # Group the flat (entity x fiscal year) series into one record per
         # entity, ordered by the canonical rank the client slices on.
         tl_ent = {}

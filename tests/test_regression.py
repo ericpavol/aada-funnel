@@ -2346,3 +2346,31 @@ def test_spend_coverage_flags_a_platform_that_ends_before_the_slate_data():
     assert cov["Meta Ads"]["behind"] is True and cov["Meta Ads"]["label"] == "May 2026"
     assert cov["Google Ads"]["behind"] is False
     conn.close()
+
+
+def test_timeline_picker_counts_follow_the_count_and_ticked_years(ft_db):
+    """The series picker's numbers used to be all-time tag volume whatever was
+    selected. They must follow the chosen Count and the ticked years, and
+    distinct people must count each person once across years."""
+    from itertools import combinations
+    conn, prog = ft_db, programs.get("ft")
+    flt = filters.Filters(prog)
+    for measure in metrics.TL_MEASURES:
+        full = metrics.tag_timeline(conn, prog, flt.where, flt.params, cap=False,
+                                    measure=measure, year_detail=True)
+        yi = full["year_detail"]["year_index"]
+        for k in range(1, len(yi) + 1):
+            for subset in combinations(yi, k):
+                got = metrics.timeline_entity_counts(full, subset)
+                ph = ",".join("?" * len(subset))
+                fy = ("CAST(strftime('%Y', d) AS INTEGER) - (CASE WHEN "
+                      "CAST(strftime('%m', d) AS INTEGER) >= 9 THEN 0 ELSE 1 END)")
+                agg = "COUNT(DISTINCT applicant_id)" if measure == "people" else "COUNT(*)"
+                want = {r[0]: r[1] for r in conn.execute(
+                    "SELECT channel, " + agg + " FROM (SELECT p.applicant_id, p.channel,"
+                    " substr(COALESCE(NULLIF(p.ts,''), a.started_date),1,10) d"
+                    " FROM pings p JOIN applicants a ON a.id=p.applicant_id"
+                    " WHERE a.program='ft' AND COALESCE(NULLIF(p.ts,''), a.started_date) <> '')"
+                    " WHERE " + fy + " IN (" + ph + ") GROUP BY channel", list(subset))}
+                for ch, n in want.items():
+                    assert got.get(ch, 0) == n, (measure, subset, ch)

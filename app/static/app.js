@@ -1670,6 +1670,7 @@
       n.classList.toggle("past", y !== derived.newest);
     });
 
+    paintTimelinePickerCounts(combo, TLC.years, TLC.measure);
     var h = tlHeadline(combo, TLC.years);
     var byMeasure = TLC.measure === "tags"
       ? { n: h.tags, unit: "tags" } : { n: h.people, unit: "people" };
@@ -1689,6 +1690,46 @@
       n.hidden = !(TLC.apps && started);
     });
     syncTimelineUrl();
+  }
+
+  /** The series picker's per-channel numbers, for the ticked years and the
+   *  chosen Count -- mirrors metrics.timeline_entity_counts. Tags add up across
+   *  years; distinct people come from per-channel year bitmasks, because one
+   *  person in two years is one person. */
+  function tlEntityCounts(combo, years, measure) {
+    var out = {};
+    if (measure === "people") {
+      var bits = 0;
+      years.forEach(function (y) {
+        var i = combo.year_index.indexOf(y);
+        if (i !== -1) bits |= (1 << i);
+      });
+      var em = combo.entity_people_masks || {};
+      Object.keys(em).forEach(function (name) {
+        var n = 0;
+        Object.keys(em[name]).forEach(function (m) {
+          if (Number(m) & bits) n += em[name][m];
+        });
+        out[name] = n;
+      });
+    } else {
+      combo.entities.forEach(function (e) {
+        var n = 0;
+        e.lines.forEach(function (l) { if (years.indexOf(l.fy) !== -1) n += l.total; });
+        out[e.name] = n;
+      });
+    }
+    return out;
+  }
+
+  function paintTimelinePickerCounts(combo, years, measure) {
+    var counts = tlEntityCounts(combo, years, measure);
+    var root = document.querySelector('[data-picker="tl_pick"]');
+    if (!root) return;
+    root.querySelectorAll("[data-row]").forEach(function (row) {
+      var sn = row.querySelector(".sn");
+      if (sn) sn.textContent = numFmt(counts[row.getAttribute("data-row")] || 0);
+    });
   }
 
   function syncTimelineUrl() {
