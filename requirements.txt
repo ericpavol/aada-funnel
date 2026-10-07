@@ -4,3 +4,5 @@ uvicorn==0.39.0
 Jinja2==3.1.6
 python-multipart==0.0.20
 openpyxl==3.1.5
+# 0.x: the 1.x line needs Python >= 3.10; local dev is 3.9.
+anthropic>=0.125,<1

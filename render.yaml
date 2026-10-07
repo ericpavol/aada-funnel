@@ -35,3 +35,8 @@ services:
         sync: false
       - key: AADA_PASS
         sync: false
+      # Ask-the-data chat (app/chat.py). Secret, set in the Render dashboard;
+      # without it the chat panel says it isn't switched on and nothing else
+      # changes.
+      - key: ANTHROPIC_API_KEY
+        sync: false

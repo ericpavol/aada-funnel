@@ -33,6 +33,13 @@ than by the golden rule. The nav label dropped "(2 Year)" accordingly.
 1. **`sample_data/` holds REAL applicant records.** Never commit it, never send
    it to a third-party service, never let it into the public repo. This is the
    constraint that shaped the entire hosting design below.
+   **One approved exception (Eric, 2026-10-07): the ask-the-data chat may send
+   AGGREGATES — counts, percentages, costs — to Anthropic's API.** Never an
+   applicant row, Global ID, name, email, city, postcode or Slate free text. The
+   chat's tools only return totals the pages already compute, and
+   `test_chat_tools_never_return_applicant_level_fields` fails if one ever
+   returns a per-person field. Anything that would widen this needs Eric's
+   explicit say-so first.
 2. **`app/analysis_engine.py` is a byte-identical vendored copy** of the
    handoff's reference engine. Import it; never edit it. A SHA-256 test fails on
    drift — re-copy the file instead of patching it.
@@ -51,7 +58,7 @@ Summer: 4,483 → 954 → 387.
 FY 2025/26 paid media: **$288,357** (Google $140,222 · Meta $148,135).
 Blended first-touch cost per started app ≈ **$51**.
 
-**96 tests** pass against the real sample files. If a change moves any canonical
+**102 tests** pass against the real sample files. If a change moves any canonical
 number above, that is a regression until proven otherwise.
 
 ---
@@ -491,6 +498,36 @@ Found on the way and fixed: the series pickers wrote only *drawable* names into
 the URL, so a channel you had ticked, which happened to have no data in the
 ticked years, silently dropped out of the address bar and a reload unticked
 it. The URL now carries the full selection in picker order, as the server does.
+
+### Ask-the-data chat
+"Ask the data" button on every page opens a chat panel. Questions go to
+`POST /chat` (behind the same login), which runs a tool loop against
+**Claude Opus 5.5** (`app/chat.py`). Claude never sees the database: it calls
+five tools — `list_options`, `funnel`, `channels`, `year_over_year`, `cost` —
+each a thin wrapper over the functions the pages already use, taking the same
+filters (program, fiscal year, term, degree, pathway, emphasis, region, country,
+age band, channel touched). Totals only — see ground rule 1.
+
+* **Needs `ANTHROPIC_API_KEY`** on the server (Render → Environment; listed in
+  `render.yaml` as `sync: false`). Without it the panel says so; nothing else
+  changes. Cost is per question, roughly a few cents to ~$0.30 depending on how
+  many lookups it needs; effort is `medium`, at most 8 tool rounds a question.
+* **Library is `anthropic` 0.x** (`>=0.125,<1`): the 1.x line needs Python ≥
+  3.10 and local dev is 3.9. Moving to 1.x means moving Python first.
+* **Conversation shape, and why:** within one question the message list is
+  append-only (the model's response content, thinking included, goes back
+  verbatim before each tool result). Earlier questions are replayed as plain
+  question/answer text with no thinking blocks. Opus 5.5 binds each thinking
+  block to the conversation that produced it, so editing history would make the
+  API reject or drop them; this shape never replays a block against a history
+  it wasn't made from. The system prompt and tool list are fixed (no dates in
+  them — today's date and the page being viewed go in the user's message), which
+  also keeps the prompt cache warm.
+* The conversation lives in the browser tab (sessionStorage) — "New" clears it.
+  The panel renders a small markdown subset with everything escaped first, so a
+  model reply can't inject markup.
+* Server-side fallback (`fallbacks: "default"`) is on, so a policy decline is
+  retried on a suitable model inside the same call rather than failing.
 
 ## Analytical decisions worth not re-litigating
 

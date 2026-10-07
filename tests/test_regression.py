@@ -2374,3 +2374,106 @@ def test_timeline_picker_counts_follow_the_count_and_ticked_years(ft_db):
                     " WHERE " + fy + " IN (" + ph + ") GROUP BY channel", list(subset))}
                 for ch, n in want.items():
                     assert got.get(ch, 0) == n, (measure, subset, ch)
+
+
+# ---------------------------------------------------------------------------
+# Ask-the-data chat
+# ---------------------------------------------------------------------------
+
+_FORBIDDEN = ("global_id", "city", "postal", "email", "first_name", "last_name")
+
+
+def test_chat_tools_never_return_applicant_level_fields(ft_db):
+    """Only aggregates may leave the app (PROJECT.md ground rule 1). No tool
+    output may carry a per-person field, under any filter combination."""
+    from app import chat
+    conn = ft_db
+    page = {"program": "ft", "fiscal_year": "all"}
+    calls = [("list_options", {}), ("funnel", {}), ("channels", {"include_sub_sources": True}),
+             ("channels", {"attribution": "first"}), ("cost", {"stage": "admitted"}),
+             ("year_over_year", {"fiscal_year": "2025", "stage": "submitted"})]
+    for name, args in calls:
+        out, _err = chat.run_tool(conn, name, args, page)
+        low = out.lower()
+        for f in _FORBIDDEN:
+            assert '"%s"' % f not in low, (name, f)
+        gids = {r[0] for r in conn.execute("SELECT global_id FROM applicants LIMIT 200")}
+        assert not any(g and g in out for g in gids if len(g) > 6), name
+
+
+class _Block:
+    def __init__(self, **kw):
+        self.__dict__.update(kw)
+
+
+class _Resp:
+    def __init__(self, stop, content):
+        self.stop_reason = stop
+        self.content = content
+
+
+class _FakeClient:
+    """Stands in for anthropic.Anthropic(): first asks for the funnel tool,
+    then answers. Records every request so the test can check the shape."""
+    def __init__(self):
+        self.calls = []
+        outer = self
+
+        class _M:
+            def create(self, **kw):
+                # Snapshot: the app keeps appending to the same list object.
+                outer.calls.append(dict(kw, messages=list(kw["messages"])))
+                if len(outer.calls) == 1:
+                    return _Resp("tool_use", [
+                        _Block(type="thinking", thinking="", signature="sig"),
+                        _Block(type="tool_use", id="tu1", name="funnel", input={})])
+                return _Resp("end_turn", [_Block(type="text", text="**516** started.")])
+
+        class _B:
+            messages = _M()
+        self.beta = _B()
+
+
+def test_chat_loop_runs_tools_and_keeps_the_turn_append_only(ft_db):
+    from app import chat
+    fake = _FakeClient()
+    history = [{"role": "user", "text": "earlier q"}, {"role": "assistant", "text": "earlier a"}]
+    res = chat.answer(ft_db, "How many started?", history, {"program": "ft"}, client=fake)
+    assert res["answer"] == "**516** started."
+    assert res["tools"] == ["funnel"]
+    first, second = fake.calls[0]["messages"], fake.calls[1]["messages"]
+    # Append-only within the turn: the second request starts with the first.
+    assert second[:len(first)] == first
+    # The model's own content (thinking included) went back verbatim...
+    assert second[len(first)]["role"] == "assistant"
+    assert [b.type for b in second[len(first)]["content"]] == ["thinking", "tool_use"]
+    assert second[len(first) + 1]["content"][0]["type"] == "tool_result"
+    # ...and earlier questions are plain text, no thinking blocks.
+    assert first[0] == {"role": "user", "content": "earlier q"}
+    assert first[1] == {"role": "assistant", "content": "earlier a"}
+    # System prompt and tools are identical across the turn (stable prefix).
+    assert fake.calls[0]["system"] == fake.calls[1]["system"]
+    assert fake.calls[0]["tools"] == fake.calls[1]["tools"]
+    assert res["user_sent"].endswith("How many started?")
+
+
+def test_chat_history_is_cleaned_to_alternate_and_end_on_an_answer(ft_db):
+    from app import chat
+    fake = _FakeClient()
+    bad = [{"role": "assistant", "text": "orphan"}, {"role": "user", "text": "q1"},
+           {"role": "user", "text": "dup"}, {"role": "assistant", "text": "a1"},
+           {"role": "user", "text": "dangling"}]
+    chat.answer(ft_db, "next", bad, {"program": "ft"}, client=fake)
+    msgs = fake.calls[0]["messages"]
+    roles = [m["role"] for m in msgs]
+    assert roles == ["user", "assistant", "user"]
+    assert msgs[0]["content"] == "q1" and msgs[1]["content"] == "a1"
+
+
+def test_chat_endpoint_says_so_when_no_api_key(monkeypatch):
+    from starlette.testclient import TestClient
+    from app import main as _main
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    monkeypatch.delenv("ANTHROPIC_AUTH_TOKEN", raising=False)
+    r = TestClient(_main.app).post("/chat", json={"question": "hi"})
+    assert r.status_code == 503 and "ANTHROPIC_API_KEY" in r.json()["error"]

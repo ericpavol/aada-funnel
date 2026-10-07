@@ -9,12 +9,12 @@ import datetime as _dt
 import os
 from typing import Optional
 
-from fastapi import Depends, FastAPI, File, Form, Request, UploadFile
+from fastapi import Body, Depends, FastAPI, File, Form, Request, UploadFile
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
-from . import auth, db, filters, ingest, metrics, programs, spend, taxonomy
+from . import auth, chat, db, filters, ingest, metrics, programs, spend, taxonomy
 
 # Refuses to import (and therefore to boot) on a half-configured credential pair.
 # See app/auth.py -- this is what makes a typo'd env var a startup failure
@@ -947,6 +947,59 @@ def _cost_view(conn, program, flt, any_matrix, first_matrix, stage,
         "coverage": _spend_coverage(conn, program, _data_through(conn, program, flt)),
     })
     return cost
+
+
+def _chat_page(conn, page_query):
+    """The view the user asked from -> defaults for the chat's tools."""
+    from starlette.datastructures import QueryParams
+    qp = QueryParams((page_query or "").lstrip("?"))
+    key = qp.get("program", "ft")
+    program = programs.PROGRAMS.get(key) or programs.get("ft")
+    flt = filters.from_query(program, qp, default_fy=filters.default_fiscal_year(conn, program))
+    if not flt.date_field:
+        fy = "all"
+    elif (flt.date_from, flt.date_to) == filters.fiscal_range(filters.fiscal_year_of(flt.date_from)):
+        fy = filters.fiscal_year_of(flt.date_from)
+    else:
+        fy = None
+    summary = " · ".join(b for b in (flt.summary() or "").split(" · ")
+                         if not b.startswith(tuple(program.date_fields.values())))
+    return {"program": program.key, "fiscal_year": fy, "summary": summary}
+
+
+@app.post("/chat")
+def chat_endpoint(payload: dict = Body(...)):
+    """Ask-the-data chat. Behind the app-wide login like every other route.
+    Only aggregates are sent to the model -- see app/chat.py."""
+    from fastapi.responses import JSONResponse
+    import anthropic
+    if not chat.configured():
+        return JSONResponse({"error": "Chat isn't switched on yet: the server has no "
+                             "ANTHROPIC_API_KEY. Add it in Render under Environment."},
+                            status_code=503)
+    question = str(payload.get("question") or "").strip()[:2000]
+    if not question:
+        return JSONResponse({"error": "Ask a question first."}, status_code=400)
+    history = payload.get("history") if isinstance(payload.get("history"), list) else []
+    conn = get_conn()
+    try:
+        page = _chat_page(conn, payload.get("page"))
+        try:
+            return JSONResponse(chat.answer(conn, question, history, page))
+        except anthropic.AuthenticationError:
+            return JSONResponse({"error": "The ANTHROPIC_API_KEY on the server was rejected."},
+                                status_code=503)
+        except anthropic.RateLimitError:
+            return JSONResponse({"error": "Too many questions at once. Wait a minute and try again."},
+                                status_code=429)
+        except anthropic.APIConnectionError:
+            return JSONResponse({"error": "Couldn't reach Claude. Try again shortly."},
+                                status_code=502)
+        except anthropic.APIStatusError as exc:
+            return JSONResponse({"error": "Claude returned an error (%s). Try again." % exc.status_code},
+                                status_code=502)
+    finally:
+        conn.close()
 
 
 @app.get("/timeline.json")
