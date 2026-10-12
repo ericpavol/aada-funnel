@@ -86,11 +86,7 @@ class Filters:
         self.where, self.params = self._build()
 
     def _build(self):
-        # Deferral clones are never counted -- they are a copy of an applicant
-        # already counted in their original cycle (see db.mark_clones). Applied
-        # here, once, so every table, chart, filter count and comparison
-        # leaves them out consistently.
-        clauses = ["program = ?", "is_clone = 0"]
+        clauses = ["program = ?"]
         params = [self.program.key]
 
         def inlist(col, vals):

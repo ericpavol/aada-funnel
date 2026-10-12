@@ -537,25 +537,31 @@ age band, channel touched). Totals only — see ground rule 1.
 * Eric's working answer for now is to ask Claude Code directly, which reads the
   local copy of the same exports — no key, no per-question bill.
 
-### Deferral clones are left out of every count
+### Deferral clones are counted, as their own applications
 Slate's team (2026-10-12): when an accepted student defers, the application is
-**cloned** — the original stays on file for its cycle, and a new, already-
-admitted application opens for the new term, with a fresh start date. The Ping
-Data report doesn't filter out the inactive copy, so each deferral showed up as
-a brand-new, already-admitted applicant this year. On the 12 Oct export that
-was 23 of FY 2026/27's 24 "admits" (Eric chose Option A: exclude them here).
+**cloned** — the original stays on file and a new, already-admitted application
+opens for the new term, with a fresh start date. On the 12 Oct export that was
+23 of FY 2026/27's 24 admits (originals: 20 in FY 2025/26, 3 earlier).
 
-`db.mark_clones` sets `is_clone` on every connect and after every upload;
-`Filters` adds `is_clone = 0` to its base clause, so every page, chart, filter
-count and comparison leaves them out. A row is a clone when the same person has
-an **earlier, admitted** application and either Slate marks it "Deferred
-Applicant" or it is admitted with no completed date **and started and submitted
-the same day** (Slate creates the copy in one step). Each test is load-bearing:
-Slate's own flag missed a clone (014479613); ~7% of real admits lack a
-completed date; and a genuine re-application (155027697 — accepted Fall 2025,
-applied for January 2026 six weeks later, enrolled) took weeks to submit, so
-the same-day test keeps it. The canonical July sample has no clones and still
-reads 8,436.
+**Decision (Eric, 2026-10-12): count both.** Every application is its own
+application — someone can genuinely apply for one year and again for another,
+and a deferred student holds a real, active application for the new term. So
+FY 2026/27 shows those 23 as admits, and their originals still count in the year
+they started. (Excluding them was built first, then reverted the same day.)
+
+`db.mark_clones` still sets `is_clone` — same person, earlier admitted
+application, and either Slate's "Deferred Applicant" flag or admitted with no
+completed date and started and submitted the same day — so a clone can be
+identified or filtered later. It excludes nothing. Slate's flag alone missed
+two clones (014479613, 228498856); the same-day test keeps a genuine
+re-application (155027697) out of the clone set.
+
+**Not the same thing as term-change duplicates.** When Slate relabels an
+existing application's term (Fall 2026 → January 2027 on deferral), the dedup
+key (Global ID + term + start date) sees a new record and keeps the stale one
+too: the SAME application counted twice. 145 such copies as of 2026-10-12,
+inflating FY 2025/26 (8,635 started vs 8,501; 365 admitted vs 352). Open —
+awaiting Eric's go-ahead to fix.
 
 The 2026-10 layout (`FT_2026_10`) maps only `deferred` from the five new
 columns. The stage dates are not used yet — Audition Requested Date has gaps

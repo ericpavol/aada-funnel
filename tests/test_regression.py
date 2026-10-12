@@ -2553,7 +2553,7 @@ def _app(conn, gid, term, started, submitted, completed, admitted, deferred=0):
         (gid, term, started, submitted, completed, 1 if submitted else 0, admitted, deferred))
 
 
-def test_deferral_clones_are_marked_and_left_out_of_every_count():
+def test_deferral_clones_are_marked_but_still_counted():
     conn = db.connect(":memory:")
     # Clone, unflagged by Slate (the 014479613 shape).
     _app(conn, "A", "January 2027 (Spring)", "2025-08-14", "2025-12-10", "2026-02-03", 1)
@@ -2571,10 +2571,11 @@ def test_deferral_clones_are_marked_and_left_out_of_every_count():
         "SELECT global_id FROM applicants WHERE is_clone=1")}
     assert flagged == {"A", "B"}
 
+    # Counted like any other application (Eric, 2026-10-12).
     flt = filters.Filters(programs.get("ft"))
     n = conn.execute("SELECT COUNT(*), SUM(st_admitted) FROM applicants WHERE "
                      + flt.where, flt.params).fetchone()
-    assert tuple(n) == (5, 5), "clones must not be counted"
+    assert tuple(n) == (7, 7)
     conn.close()
 
 

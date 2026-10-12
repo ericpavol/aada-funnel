@@ -336,7 +336,7 @@ def _ctx(request, conn, program, flt, **extra):
     facets = filters.facet_values(conn, program, flt)
     # Unfiltered population, so the bar can say "1,204 of 8,436".
     program_total = conn.execute(
-        "SELECT COUNT(*) FROM applicants WHERE program=? AND is_clone=0", (program.key,)
+        "SELECT COUNT(*) FROM applicants WHERE program=?", (program.key,)
     ).fetchone()[0]
     filtered_total = conn.execute(
         "SELECT COUNT(*) FROM applicants WHERE " + flt.where, flt.params

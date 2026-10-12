@@ -283,6 +283,11 @@ def mark_clones(conn):
     clone (014479613) in the first export that carried it.
 
     Recomputed from scratch on every connect and after every upload.
+
+    NOT used to exclude anything (Eric, 2026-10-12): every application counts
+    as its own application, clones included -- a deferred student holds a real,
+    active application for the new term. The marker is kept so a clone can be
+    identified or filtered later without re-deriving the rule.
     """
     conn.execute("UPDATE applicants SET is_clone = 0 WHERE is_clone <> 0")
     conn.execute("""
