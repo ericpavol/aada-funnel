@@ -25,6 +25,15 @@ AGE_BANDS = [
 ]
 _BANDS = {b[0]: b for b in AGE_BANDS}
 
+# Deferral copies (applicants.is_clone, see db.mark_clones). Counted as their
+# own applications by default (Eric, 2026-10-12); this filter hides or isolates
+# them.
+DEFERRAL_OPTS = [
+    ("exclude", "Hide deferral copies", "is_clone = 0"),
+    ("only", "Only deferral copies", "is_clone = 1"),
+]
+_DEFERRAL = {k: (lbl, sql) for k, lbl, sql in DEFERRAL_OPTS}
+
 
 def _disp(key, values):
     """Swap the sentinel for its human label so `__none__` never reaches the UI."""
@@ -69,7 +78,7 @@ class Filters:
     def __init__(self, program, terms=None, regions=None, countries=None,
                  emphases=None, age_bands=None, date_field=None,
                  date_from=None, date_to=None, channels=None, stage=None,
-                 degrees=None, pathways=None):
+                 degrees=None, pathways=None, deferral=None):
         self.program = program
         self.terms = [t for t in (terms or []) if t]
         self.regions = [r for r in (regions or []) if r]
@@ -83,6 +92,7 @@ class Filters:
         self.date_to = (date_to or "").strip()
         self.channels = [c for c in (channels or []) if c]
         self.stage = stage if stage in program.stage_keys else None
+        self.deferral = deferral if deferral in _DEFERRAL else None
         self.where, self.params = self._build()
 
     def _build(self):
@@ -143,6 +153,9 @@ class Filters:
         if self.stage:
             clauses.append("st_%s = 1" % self.stage)
 
+        if self.deferral:
+            clauses.append(_DEFERRAL[self.deferral][1])
+
         if self.channels:
             # "touched at least one of these channels" (any-touch semantics).
             # "(no UTM)" is not a stored channel — those applicants have no ping
@@ -166,7 +179,7 @@ class Filters:
         return bool(self.terms or self.regions or self.countries or self.emphases
                     or self.degrees or self.pathways
                     or self.age_bands or self.channels or self.stage
-                    or (self.date_field and (self.date_from or self.date_to)))
+                    or self.deferral or (self.date_field and (self.date_from or self.date_to)))
 
     def summary(self):
         bits = []
@@ -192,6 +205,8 @@ class Filters:
             bits.append("Touched: " + ", ".join(_disp("channel", self.channels)))
         if self.stage:
             bits.append("Reached: " + self.program.stage_labels[self.stage])
+        if self.deferral:
+            bits.append(_DEFERRAL[self.deferral][0])
         return " · ".join(bits)
 
     def tokens(self):
@@ -225,6 +240,8 @@ class Filters:
             })
         if self.stage:
             add("stage", "Reached", [self.program.stage_labels[self.stage]])
+        if self.deferral:
+            add("deferral", "Deferral", [_DEFERRAL[self.deferral][0]])
         return out
 
     def without(self, *dimensions):
@@ -255,6 +272,7 @@ class Filters:
             date_from=self.date_from if dated else None,
             date_to=self.date_to if dated else None,
             stage=None if "stage" in drop else self.stage,
+            deferral=None if "deferral" in drop else self.deferral,
         )
 
     def query_dict(self):
@@ -268,6 +286,8 @@ class Filters:
                 d[name] = list(vals)
         if self.stage:
             d["stage"] = self.stage
+        if self.deferral:
+            d["deferral"] = self.deferral
         if self.date_field:
             d["date_field"] = self.date_field
         if self.date_from:
@@ -354,6 +374,7 @@ def facet_values(conn, program, flt=None):
         "degrees": col("degree", "degree", alpha=True, blank=False),
         "pathways": col("bfa_pathway", "pathway", alpha=True, blank=False),
         "channels": channel_list,
+        "deferral": _deferral_counts(conn, scope("deferral")),
         "age_bands": AGE_BANDS,
         "date_fields": program.date_fields,
         "date_span": (span["lo"] or "", span["hi"] or "") if span else ("", ""),
@@ -366,7 +387,7 @@ DIMENSION_PARAMS = {
     "term": ["term"], "region": ["region"], "country": ["country"],
     "emphasis": ["emphasis"], "channel": ["channel"], "age": ["age"],
     "degree": ["degree"], "pathway": ["pathway"],
-    "stage": ["stage"], "date": ["date_field", "date_from", "date_to"],
+    "stage": ["stage"], "deferral": ["deferral"], "date": ["date_field", "date_from", "date_to"],
 }
 
 
@@ -421,7 +442,28 @@ def describe(program, facets, flt):
                       "selected": flt.pathways})
     for i, dim in enumerate(extra):
         dims.insert(_index_of(dims, "emphasis") + 1 + i, dim)
+    if facets.get("deferral"):
+        dims.append({"key": "deferral", "label": "Deferral copies", "param": "deferral",
+                     "type": "single",
+                     "values": [{"v": k, "label": lbl, "n": facets["deferral"].get(k)}
+                                for k, lbl, _ in DEFERRAL_OPTS],
+                     "selected": [flt.deferral] if flt.deferral else []})
     return {"dimensions": dims, "program": program.key}
+
+
+def _deferral_counts(conn, where_params):
+    """{option: applicants} for the Deferral picker; {} when there are no copies,
+    so programs without any (Summer) never show the filter."""
+    where, params = where_params
+    n_clone = conn.execute("SELECT COUNT(*) FROM applicants WHERE %s AND is_clone = 1"
+                           % where, params).fetchone()[0]
+    has_any = conn.execute("SELECT 1 FROM applicants WHERE program = ? AND is_clone = 1"
+                           " LIMIT 1", (params[0],)).fetchone()
+    if not has_any:
+        return {}
+    total = conn.execute("SELECT COUNT(*) FROM applicants WHERE %s" % where,
+                         params).fetchone()[0]
+    return {"exclude": total - n_clone, "only": n_clone}
 
 
 def _index_of(dims, key):
@@ -472,4 +514,5 @@ def from_query(program, params, default_fy=None):
         age_bands=getall("age"), channels=getall("channel"),
         date_field=field, date_from=lo, date_to=hi,
         stage=params.get("stage"),
+        deferral=params.get("deferral"),
     )

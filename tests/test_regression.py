@@ -1966,8 +1966,12 @@ def test_yoy_counts_last_year_as_it_stood_then_not_as_it_stands_now(ft_db):
     assert boxed <= flagged
 
 
-def test_yoy_refuses_a_delta_for_stages_with_no_date(ft_db):
+def test_yoy_refuses_a_delta_for_stages_with_no_date(ft_db, monkeypatch):
+    # Since the 2026-10 export every FT stage has a date; take the audition and
+    # admit dates away again to prove a dateless stage is still refused.
     conn, prog = ft_db, programs.get("ft")
+    monkeypatch.setattr(prog, "stage_dates", {k: v for k, v in prog.stage_dates.items()
+                                              if k in ("started", "submitted", "enrolled")})
     lo = conn.execute("SELECT MIN(started_date) d FROM applicants"
                       " WHERE program='ft' AND started_date<>''").fetchone()["d"]
     hi = "%s-%s-23" % (lo[:4], lo[5:7])
@@ -1990,6 +1994,8 @@ def test_a_stage_becomes_comparable_the_moment_it_gets_a_date(ft_db, monkeypatch
     proves the view reads the map rather than hardcoding two stages.
     """
     conn, prog = ft_db, programs.get("ft")
+    monkeypatch.setattr(prog, "stage_dates", {k: v for k, v in prog.stage_dates.items()
+                                              if k in ("started", "submitted", "enrolled")})
     lo = conn.execute("SELECT MIN(started_date) d FROM applicants"
                       " WHERE program='ft' AND started_date<>''").fetchone()["d"]
     hi = "%s-%s-23" % (lo[:4], lo[5:7])
@@ -2632,3 +2638,69 @@ def test_a_term_change_between_uploads_updates_the_application(tmp_path):
 def test_duplicates_within_one_file_are_never_merged(ft_db):
     # The canonical sample has people listed twice in one file; they stay two.
     assert ft_db.execute("SELECT COUNT(*) FROM applicants WHERE program='ft'").fetchone()[0] == 8436
+
+
+def _oct_book(extra_for_row):
+    """First 40 sample rows in the 2026-10 layout; extra_for_row(i) -> the five
+    appended cells (aud req / aud comp / admitted / enrolled dates, deferred)."""
+    import io
+    import openpyxl as _ox
+    src = _ox.load_workbook(FT_FILE, read_only=True, data_only=True)
+    rows = [list(r) for i, r in enumerate(src["Export"].iter_rows(values_only=True)) if i <= 40]
+    src.close()
+    out = _ox.Workbook(); ws = out.active; ws.title = "Export"
+    for i, r in enumerate(rows):
+        # The sample is the 2026-07 layout: emphasis at 19. Insert Referral
+        # Info before it and BFA Pathway after it to reach the 2026-10 shape.
+        r = list(r)[:20] + [None] * max(0, 20 - len(r))
+        r = r[:19] + (["Referral Info"] if i == 0 else [None]) + [r[19]] + (
+            ["Application BFA Pathway"] if i == 0 else [None])
+        r += (["Audition Requested Date", "Audition Complete Date", "Admitted Date",
+               "Enrolled Date", "Deferred Applicant"] if i == 0 else extra_for_row(i))
+        ws.append(r)
+    buf = io.BytesIO(); out.save(buf); buf.seek(0)
+    return buf, rows
+
+
+def test_stage_dates_are_stored_and_a_blank_never_wipes_one(tmp_path):
+    import datetime as _d
+    conn = db.connect(str(tmp_path / "t.db"))
+    buf, rows = _oct_book(lambda i: [_d.datetime(2026, 9, 1), _d.datetime(2026, 9, 2),
+                                     _d.datetime(2026, 9, 3), None, None] if i == 1
+                          else [None] * 5)
+    ingest.ingest(conn, buf, "ft", "oct.xlsx", "a")
+    gid = str(rows[1][0]).strip()
+    got = conn.execute("SELECT aud_req_date, aud_comp_date, admitted_date FROM applicants"
+                       " WHERE global_id=? ORDER BY id LIMIT 1", (gid,)).fetchone()
+    assert tuple(got) == ("2026-09-01", "2026-09-02", "2026-09-03")
+    buf2, _ = _oct_book(lambda i: [None] * 5)
+    ingest.ingest(conn, buf2, "ft", "oct2.xlsx", "b")
+    again = conn.execute("SELECT aud_req_date FROM applicants WHERE global_id=?"
+                         " ORDER BY id LIMIT 1", (gid,)).fetchone()[0]
+    assert again == "2026-09-01"
+    conn.close()
+
+
+def test_all_ft_stages_are_dated_and_only_audition_requested_warns():
+    prog = programs.get("ft")
+    assert set(prog.stage_dates) >= {"started", "submitted", "aud_req", "aud_comp",
+                                     "admitted", "enrolled"}
+    assert set(prog.stage_date_notes) == {"aud_req"}
+
+
+def test_deferral_filter_hides_or_isolates_copies(ft_db):
+    conn, prog = ft_db, programs.get("ft")
+    conn.execute("UPDATE applicants SET is_clone=1 WHERE id IN"
+                 " (SELECT id FROM applicants WHERE program='ft' LIMIT 3)")
+    total = conn.execute("SELECT COUNT(*) FROM applicants WHERE program='ft'").fetchone()[0]
+    def n(f):
+        return conn.execute("SELECT COUNT(*) FROM applicants WHERE " + f.where,
+                            f.params).fetchone()[0]
+    assert n(filters.Filters(prog, deferral="only")) == 3
+    assert n(filters.Filters(prog, deferral="exclude")) == total - 3
+    assert n(filters.Filters(prog, deferral="bogus")) == total
+    facets = filters.facet_values(conn, prog)
+    assert facets["deferral"] == {"exclude": total - 3, "only": 3}
+    dims = {d["key"] for d in filters.describe(prog, facets, filters.Filters(prog))["dimensions"]}
+    assert "deferral" in dims
+    conn.execute("UPDATE applicants SET is_clone=0")

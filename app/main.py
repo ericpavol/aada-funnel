@@ -473,6 +473,7 @@ def overview(request: Request):
                 nou = chans[-1]
                 yoy["by_stage"][key] = {
                     "label": program.stage_labels[key], "pace": pace,
+                    "note": program.stage_date_notes.get(key),
                     "channels": chans, "stage_row": row,
                     "untracked_share": (
                         nou["current"] / row["current"] if row["current"] else None,
@@ -739,21 +740,31 @@ def overview(request: Request):
             funnel_yoy = {"prior_thin": yoy["prior_thin"], "window": yoy["prior"],
                           "as_of": yoy["as_of"],
                           "started": prior_by[program.stage_keys[0]], "rows": {}}
+            cbase = prior_by[program.stage_keys[0]]["current"]
             for st in overall["steps"]:
                 r = prior_by[st["key"]]
                 ppct = r["prior"] / pbase if pbase else None
+                # A stage whose date has gaps (Program.stage_date_notes) is
+                # compared dated-vs-dated: only people WITH the date count on
+                # either side. Its flag count beside it is still the real
+                # headcount; the warning says the two differ and why.
+                note = r.get("note")
+                cur_n = r["current"] if note else st["n"]
+                cpct = (cur_n / cbase if cbase else None) if note else st["pct_of_started"]
                 funnel_yoy["rows"][st["key"]] = {
                     "prior": r["prior"], "prior_pct": ppct,
                     "comparable": r["comparable"],
+                    "note": note, "dated": r["current"] if note else None,
                     # Change in the NUMBER of people, alongside the change in
                     # conversion below -- the two answer different questions
                     # (more people vs. a larger share of them getting through).
                     "prior_by_degree": r.get("prior_by_degree") or {},
-                    "count_diff": st["n"] - r["prior"],
-                    "count_delta": ((st["n"] - r["prior"]) / r["prior"]
+                    "count_diff": cur_n - r["prior"],
+                    "count_delta": ((cur_n - r["prior"]) / r["prior"]
                                     if r["prior"] and r["comparable"] else None),
-                    "delta_pts": ((st["pct_of_started"] - ppct) * 100
-                                  if ppct is not None and r["comparable"] else None),
+                    "delta_pts": ((cpct - ppct) * 100
+                                  if ppct is not None and cpct is not None
+                                  and r["comparable"] else None),
                 }
 
         return templates.TemplateResponse("overview.html", _ctx(

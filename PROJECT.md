@@ -58,7 +58,7 @@ Summer: 4,483 → 954 → 387.
 FY 2025/26 paid media: **$288,357** (Google $140,222 · Meta $148,135).
 Blended first-touch cost per started app ≈ **$51**.
 
-**111 tests** pass against the real sample files. If a change moves any canonical
+**114 tests** pass against the real sample files. If a change moves any canonical
 number above, that is a regression until proven otherwise.
 
 ---
@@ -568,9 +568,20 @@ is folded into the new row (stages MAX'd, pings moved, stale row deleted).
 Existing copies are cleaned once on connect (`_merge_relabelled_existing`).
 Duplicates inside one file are never merged, so the canonical 8,436 holds.
 
-The 2026-10 layout (`FT_2026_10`) maps only `deferred` from the five new
-columns. The stage dates are not used yet — Audition Requested Date has gaps
-(32% missing for FY 2026/27) and how to handle it is Eric's open decision.
+The 2026-10 layout (`FT_2026_10`) maps `deferred` and the three stage dates
+(`aud_req_date`, `aud_comp_date`, `admitted_date`). All six FT stages are now
+in `Program.stage_dates`, so every stage is compared year over year. Audition
+Requested Date has gaps (about 30% missing in FY 2026/27, 14% in FY 2025/26).
+Eric chose to show it with a warning (2026-10-12): `Program.stage_date_notes`
+puts a ⚠ on the stage, and its YoY columns compare dated-vs-dated (only people
+with the date, on both sides), while the main count stays the flag headcount.
+Rows only seen in exports before 2026-10 have no stage dates, so upload a
+current full export before reading these comparisons.
+
+**Deferral filter** (`deferral=exclude|only`, "Deferral copies" in Add filter)
+hides or isolates `is_clone` rows. Shown only when the program has copies.
+It matters: in FY 2026/27 (to 12 Oct) 23 of the 24 admitted are deferral
+copies; with them hidden, Admitted is 1 vs 11 last year.
 "Enrolled Date" is picked up automatically by `enrolled_index`, which moves
 Enrolled from 105 to 107 (two people with an enrolled date later deferred or
 withdrew).

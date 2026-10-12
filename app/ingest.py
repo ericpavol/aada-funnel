@@ -18,6 +18,9 @@ from .analysis_engine import build_path, classify
 
 SHEET = "Export"
 
+# Per-stage date columns a layout may map (2026-10 export on).
+_STAGE_DATE_COLS = ("aud_req_date", "aud_comp_date", "admitted_date")
+
 
 class IngestError(Exception):
     pass
@@ -312,6 +315,7 @@ def ingest(conn, path_or_stream, program_key, filename, sha256=None):
         fields["degree"] = (programs.degree_of(fields["emphasis"])
                             if program.has_degree else "")
         fields["term_start"] = programs.term_start(fields["term"])
+        stage_dates = {c: _iso(row[cols[c]]) for c in _STAGE_DATE_COLS if c in cols}
         fields["deferred"] = (1 if "deferred" in cols and _s(row[cols["deferred"]])
                               else 0)
 
@@ -402,6 +406,13 @@ def ingest(conn, path_or_stream, program_key, filename, sha256=None):
                  upload_id, applicant_id),
             )
             n_upd += 1
+
+        # Stage dates: a newer non-blank date wins, a blank never wipes one.
+        if stage_dates:
+            cur.execute(
+                "UPDATE applicants SET %s WHERE id=?" % ", ".join(
+                    "%s=CASE WHEN ?<>'' THEN ? ELSE %s END" % (c, c) for c in stage_dates),
+                [v for d in stage_dates.values() for v in (d, d)] + [applicant_id])
 
         for p in extract_pings(row, layout.utm_idx):
             cur.execute(

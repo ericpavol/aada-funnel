@@ -142,6 +142,9 @@
           <div class="step-name">
             <span class="idx">{{ '%02d'|format(loop.index) }}</span>
             {{ s.label }}
+            {% if fy and fy.note %}
+              <span class="stage-warn" title="{{ fy.note }} The year-over-year columns count only applicants who have the date: {{ fy.dated|num }} of {{ s.n|num }} this year.">⚠</span>
+            {% endif %}
           </div>
           {% if overall_split %}
             {# Stacked by degree. Every segment is a share of the SAME base
@@ -293,6 +296,8 @@
         'Stages marked <b>n/a</b> have no date in Slate, only a yes/no flag, so
          there is no way to ask where last year&#39;s cohort had got to by this day.
          They light up automatically once Slate sends the dates.',
+        'A <b>⚠</b> stage has a date in Slate, but not for everyone. Its
+         comparison counts only people with the date, on both sides.',
       ]) }}</h2>
     </div>
   </div>
@@ -340,6 +345,7 @@
         {% for key, st in yoy.by_stage.items() %}
           <div class="yoystat" data-ysblock="{{ key }}"{{ '' if key == yoy.stage else ' hidden' }}>
             <span class="eyebrow">Pace · cumulative {{ st.label|lower }}</span>
+            {% if st.note %}<span class="stage-warn-line">⚠ {{ st.note }}</span>{% endif %}
             <span class="ystat">
               <b>{{ st.pace.current_final|num }}</b>
               <span class="pale">vs {{ st.pace.prior_final|num }}</span>

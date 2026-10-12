@@ -222,7 +222,7 @@ class Layout:
 class Program:
     def __init__(self, key, label, layouts, stage_keys, stage_labels, stage_fn,
                  date_fields, extra_stages=None, channel_stage=None,
-                 has_degree=False, stage_dates=None):
+                 has_degree=False, stage_dates=None, stage_date_notes=None):
         self.key = key
         self.label = label
         # Whether this program's emphasis column encodes an AOS/BFA degree.
@@ -244,6 +244,9 @@ class Program:
         # a Layout and add ONE line here -- the comparison view reads this map
         # and needs no changes at all.
         self.stage_dates = stage_dates or {}
+        # Stage -> warning shown wherever that stage's dated count appears.
+        # For a date column with known gaps: the count is real but low.
+        self.stage_date_notes = stage_date_notes or {}
         self.layouts = layouts          # newest arrangement first
         self.stage_keys = stage_keys    # ordered funnel stages
         self.stage_labels = stage_labels
@@ -300,10 +303,11 @@ class Program:
 # match a new file; this one must sit FIRST in Program.layouts or the new
 # columns are silently ignored.
 #
-# Only `deferred` is mapped for now (it identifies deferral clones -- see
-# db._mark_clones). The stage dates are deliberately NOT mapped yet: whether
-# and how to use them is Eric's open decision (Audition Requested Date has
-# gaps). "Enrolled Date" is picked up regardless, by programs.enrolled_index.
+# `deferred` identifies deferral clones (db.mark_clones). The three stage dates
+# make those stages comparable year over year (Program.stage_dates). Audition
+# Requested Date has gaps; Eric chose to show it with a warning (2026-10-12),
+# see Program.stage_date_notes. "Enrolled Date" is picked up by
+# programs.enrolled_index.
 FT_2026_10 = Layout(
     name="2026-10 (stage dates + Deferred Applicant)",
     utm_idx=(15, 16, 17, 18),
@@ -314,6 +318,7 @@ FT_2026_10 = Layout(
         "decision": 9,
         "country": 10, "region": 11, "city": 12, "postal": 13, "age": 14,
         "referral_info": 19, "emphasis": 20, "bfa_pathway": 21,
+        "aud_req_date": 22, "aud_comp_date": 23, "admitted_date": 24,
         "deferred": 26,
     },
     anchors={
@@ -406,15 +411,21 @@ FT = Program(
     stage_fn=ft_stages,
     extra_stages={"enrolled": _ft_enrolled},
     channel_stage="admitted",
-    # aud_req / aud_comp / admitted are flags with no date -- see
-    # Program.stage_dates. Add them here the moment Slate ships the columns.
+    # aud_req / aud_comp / admitted dates arrived in the 2026-10 export. Rows
+    # only ever seen in older exports have no date and drop out of the dated
+    # count, so upload a current full export before reading these.
     #
     # Enrolled has no date either, but it has a hard floor: nobody is enrolled
     # before their term starts. `term_start` is that floor (see term_start()),
     # so "enrolled by day X" is exact for any X before the term begins -- which
     # covers every same-point comparison made early in a fiscal year.
     stage_dates={"started": "started_date", "submitted": "submitted_date",
-                 "enrolled": "term_start"},
+                 "aud_req": "aud_req_date", "aud_comp": "aud_comp_date",
+                 "admitted": "admitted_date", "enrolled": "term_start"},
+    stage_date_notes={
+        "aud_req": "Slate has no Audition Requested Date for some applicants "
+                   "who requested one, so this count may be low.",
+    },
     date_fields={
         "started_date": "App Start Date",
         "submitted_date": "App Submitted Date",

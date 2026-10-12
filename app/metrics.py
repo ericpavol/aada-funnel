@@ -198,6 +198,7 @@ def yoy_funnel(conn, program, flt, today, cohort_field=None):
             p = count(extra, [prior[1]], *prior)
             row = {"key": key, "label": label, "comparable": True,
                    "current": c, "prior": p,
+                   "note": program.stage_date_notes.get(key),
                    "delta": (c - p) / p if p else None,
                    "diff": c - p}
             if program.has_degree:
@@ -236,7 +237,8 @@ def yoy_stage_options(program):
     on by itself the day Slate sends its date.
     """
     return [{"key": k, "label": program.stage_labels[k],
-             "available": k in program.stage_dates}
+             "available": k in program.stage_dates,
+             "note": program.stage_date_notes.get(k)}
             for k in program.stage_keys]
 
 

@@ -77,6 +77,12 @@ CREATE TABLE IF NOT EXISTS applicants (
     started_date    TEXT NOT NULL DEFAULT '',
     submitted_date  TEXT NOT NULL DEFAULT '',
     completed_date  TEXT NOT NULL DEFAULT '',
+    -- Per-stage dates (2026-10 export on). Blank on rows only ever seen in an
+    -- older export, and blank for some flagged rows even in new ones -- see
+    -- Program.stage_date_notes.
+    aud_req_date    TEXT NOT NULL DEFAULT '',
+    aud_comp_date   TEXT NOT NULL DEFAULT '',
+    admitted_date   TEXT NOT NULL DEFAULT '',
     st_started      INTEGER NOT NULL DEFAULT 0,
     st_submitted    INTEGER NOT NULL DEFAULT 0,
     st_aud_req      INTEGER NOT NULL DEFAULT 0,
@@ -229,6 +235,9 @@ _ADDED_COLUMNS = [
     ("applicants", "term_start", "TEXT NOT NULL DEFAULT ''"),
     ("applicants", "deferred", "INTEGER NOT NULL DEFAULT 0"),
     ("applicants", "is_clone", "INTEGER NOT NULL DEFAULT 0"),
+    ("applicants", "aud_req_date", "TEXT NOT NULL DEFAULT ''"),
+    ("applicants", "aud_comp_date", "TEXT NOT NULL DEFAULT ''"),
+    ("applicants", "admitted_date", "TEXT NOT NULL DEFAULT ''"),
 ]
 
 
@@ -264,7 +273,10 @@ def _migrate_emphasis(conn):
 
 
 _STAGE_COLS = ("st_started", "st_submitted", "st_aud_req", "st_aud_comp",
-               "st_admitted", "st_accepted", "st_enrolled")
+               "st_admitted", "st_accepted", "st_enrolled",
+               # Dates too: MAX keeps a date over a blank. Two different dates
+               # for one application do not happen (same Slate record).
+               "aud_req_date", "aud_comp_date", "admitted_date")
 
 
 def merge_relabelled(conn, program_key, upload_id):
