@@ -241,6 +241,7 @@ def _migrate(conn):
     _migrate_emphasis(conn)
     _backfill_degree(conn)
     _backfill_term_start(conn)
+    _merge_relabelled_existing(conn)
     mark_clones(conn)
     conn.commit()
 
@@ -260,6 +261,76 @@ def _migrate_emphasis(conn):
         if new != old:
             conn.execute("UPDATE applicants SET emphasis=? WHERE emphasis=?",
                          (new, old))
+
+
+_STAGE_COLS = ("st_started", "st_submitted", "st_aud_req", "st_aud_comp",
+               "st_admitted", "st_accepted", "st_enrolled")
+
+
+def merge_relabelled(conn, program_key, upload_id):
+    """Fold an application whose TERM changed between exports back into one row.
+
+    An applicant row is keyed on Global ID + term + start date, so when Slate
+    relabels an existing application's term (Fall 2026 -> January 2027 on a
+    deferral) the next upload no longer matches it, inserts a "new" row, and the
+    old one lingers: one application counted twice (145 copies by 2026-10-12).
+
+    Rule (Eric, 2026-10-12): same person, same start date, only the term
+    changed = an UPDATE to that application. Merged here, after the upload:
+
+      stale row S  -- not in this upload (last_upload_id < upload_id)
+      fresh row T  -- in this upload, same Global ID and start date, other term
+      and no row in this upload still carries S's term for that person/date.
+
+    S's stage flags fold into T (monotonic MAX), its pings move to T (exact
+    duplicates dropped), and S is deleted. Rows that BOTH arrive in one file
+    are never merged: Slate exports some people twice in a single file (one row
+    with a term, one blank), and the reference analysis counts those as two.
+    Returns how many rows were merged away.
+    """
+    merged = 0
+    stale = conn.execute("""
+        SELECT s.id, s.global_id, s.started_date, s.term FROM applicants s
+         WHERE s.program = ? AND s.started_date <> '' AND s.last_upload_id < ?
+           AND EXISTS (SELECT 1 FROM applicants t
+                        WHERE t.program = s.program AND t.global_id = s.global_id
+                          AND t.started_date = s.started_date AND t.term <> s.term
+                          AND t.last_upload_id = ?)
+           AND NOT EXISTS (SELECT 1 FROM applicants u
+                        WHERE u.program = s.program AND u.global_id = s.global_id
+                          AND u.started_date = s.started_date AND u.term = s.term
+                          AND u.last_upload_id = ?)
+         ORDER BY s.id""", (program_key, upload_id, upload_id, upload_id)).fetchall()
+    taken = set()
+    for s in stale:
+        cands = conn.execute("""
+            SELECT id, term FROM applicants
+             WHERE program = ? AND global_id = ? AND started_date = ?
+               AND term <> ? AND last_upload_id = ?
+             ORDER BY (term = '') , id""",
+            (program_key, s["global_id"], s["started_date"], s["term"], upload_id)).fetchall()
+        target = next((c["id"] for c in cands if c["id"] not in taken), None)
+        if target is None:
+            continue
+        taken.add(target)
+        sets = ", ".join("%s = MAX(%s, (SELECT %s FROM applicants WHERE id = ?))" % (c, c, c)
+                         for c in _STAGE_COLS)
+        conn.execute("UPDATE applicants SET %s, first_upload_id = MIN(first_upload_id,"
+                     " (SELECT first_upload_id FROM applicants WHERE id = ?)) WHERE id = ?"
+                     % sets, [s["id"]] * len(_STAGE_COLS) + [s["id"], target])
+        conn.execute("UPDATE OR IGNORE pings SET applicant_id = ? WHERE applicant_id = ?",
+                     (target, s["id"]))
+        conn.execute("DELETE FROM pings WHERE applicant_id = ?", (s["id"],))
+        conn.execute("DELETE FROM applicants WHERE id = ?", (s["id"],))
+        merged += 1
+    return merged
+
+
+def _merge_relabelled_existing(conn):
+    """Clean up copies left before merge_relabelled existed, against each
+    program's latest upload. Idempotent: a no-op once nothing is left."""
+    for r in conn.execute("SELECT program, MAX(id) AS u FROM uploads GROUP BY program").fetchall():
+        merge_relabelled(conn, r["program"], r["u"])
 
 
 def mark_clones(conn):

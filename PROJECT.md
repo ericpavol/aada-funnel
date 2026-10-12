@@ -58,7 +58,7 @@ Summer: 4,483 → 954 → 387.
 FY 2025/26 paid media: **$288,357** (Google $140,222 · Meta $148,135).
 Blended first-touch cost per started app ≈ **$51**.
 
-**109 tests** pass against the real sample files. If a change moves any canonical
+**111 tests** pass against the real sample files. If a change moves any canonical
 number above, that is a regression until proven otherwise.
 
 ---
@@ -560,8 +560,13 @@ re-application (155027697) out of the clone set.
 existing application's term (Fall 2026 → January 2027 on deferral), the dedup
 key (Global ID + term + start date) sees a new record and keeps the stale one
 too: the SAME application counted twice. 145 such copies as of 2026-10-12,
-inflating FY 2025/26 (8,635 started vs 8,501; 365 admitted vs 352). Open —
-awaiting Eric's go-ahead to fix.
+inflating FY 2025/26 (8,635 started vs 8,501; 365 admitted vs 352). **Fixed
+2026-10-12** (Eric: "if only the term changes, we just UPDATE the entry"):
+`db.merge_relabelled` runs after every upload. A row from an older upload whose
+Global ID + start date now appear in the latest upload under a different term
+is folded into the new row (stages MAX'd, pings moved, stale row deleted).
+Existing copies are cleaned once on connect (`_merge_relabelled_existing`).
+Duplicates inside one file are never merged, so the canonical 8,436 holds.
 
 The 2026-10 layout (`FT_2026_10`) maps only `deferred` from the five new
 columns. The stage dates are not used yet — Audition Requested Date has gaps

@@ -2593,3 +2593,42 @@ def test_2026_10_layout_reads_the_deferred_column():
                   "Enrolled Date", "Deferred Applicant"])
     layout, _ = prog.layout_for(headers)
     assert layout is not None and layout.cols.get("deferred") == 26
+
+
+def test_a_term_change_between_uploads_updates_the_application(tmp_path):
+    """Same person, same start date, only the term changed in a later export
+    = an update to that application, never a second one (Eric, 2026-10-12)."""
+    import io
+    import openpyxl as _ox
+    src = _ox.load_workbook(FT_FILE, read_only=True, data_only=True)
+    rows = [list(r) for i, r in enumerate(src["Export"].iter_rows(values_only=True)) if i <= 40]
+    src.close()
+
+    def book(term_for_first):
+        out = _ox.Workbook(); ws = out.active; ws.title = "Export"
+        for i, r in enumerate(rows):
+            r = list(r)
+            if i == 1:
+                r[1] = term_for_first
+            ws.append(r)
+        buf = io.BytesIO(); out.save(buf); buf.seek(0); return buf
+
+    conn = db.connect(str(tmp_path / "t.db"))
+    ingest.ingest(conn, book("Fall 2026"), "ft", "aug.xlsx", "a")
+    gid, started = rows[1][0], None
+    before = conn.execute("SELECT COUNT(*) FROM applicants").fetchone()[0]
+    res = ingest.ingest(conn, book("January 2027 (Spring)"), "ft", "oct.xlsx", "b")
+    after = conn.execute("SELECT COUNT(*) FROM applicants").fetchone()[0]
+    assert after == before, "a term change must not add a row"
+    terms = [r[0] for r in conn.execute(
+        "SELECT term FROM applicants WHERE global_id=?", (str(gid).strip(),))]
+    assert "January 2027 (Spring)" in terms and "Fall 2026" not in terms
+    assert any("term changed" in w for w in res["warnings"])
+    assert conn.execute("SELECT COUNT(*) FROM pings WHERE applicant_id NOT IN"
+                        " (SELECT id FROM applicants)").fetchone()[0] == 0
+    conn.close()
+
+
+def test_duplicates_within_one_file_are_never_merged(ft_db):
+    # The canonical sample has people listed twice in one file; they stay two.
+    assert ft_db.execute("SELECT COUNT(*) FROM applicants WHERE program='ft'").fetchone()[0] == 8436

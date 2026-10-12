@@ -467,7 +467,14 @@ def ingest(conn, path_or_stream, program_key, filename, sha256=None):
         " pings_duplicate=?, notes=? WHERE id=?",
         (n_new, n_upd, pings_new, pings_dup, "\n".join(warnings), upload_id),
     )
-    from .db import mark_clones
+    from .db import mark_clones, merge_relabelled
+    relabelled = merge_relabelled(conn, program_key, upload_id)
+    if relabelled:
+        warnings.append(
+            "%d application(s) had their term changed in Slate since the last upload "
+            "(same person, same start date) and were updated in place rather than "
+            "counted again." % relabelled)
+        cur.execute("UPDATE uploads SET notes=? WHERE id=?", ("\n".join(warnings), upload_id))
     mark_clones(conn)   # a new upload can create or resolve a clone
     conn.commit()
 
