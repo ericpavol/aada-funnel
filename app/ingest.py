@@ -312,6 +312,8 @@ def ingest(conn, path_or_stream, program_key, filename, sha256=None):
         fields["degree"] = (programs.degree_of(fields["emphasis"])
                             if program.has_degree else "")
         fields["term_start"] = programs.term_start(fields["term"])
+        fields["deferred"] = (1 if "deferred" in cols and _s(row[cols["deferred"]])
+                              else 0)
 
         # Dedup identity: (global_id, term, started_date) + an occurrence
         # ordinal. Term and start date never change once an application exists,
@@ -329,17 +331,17 @@ def ingest(conn, path_or_stream, program_key, filename, sha256=None):
         if existing is None:
             cur.execute(
                 "INSERT INTO applicants (program, global_id, term, country, region, city,"
-                " postal, age, emphasis, degree, bfa_pathway, term_start, decision, app_status,"
+                " postal, age, emphasis, degree, bfa_pathway, term_start, deferred, decision, app_status,"
                 " started_date,"
                 " submitted_date, completed_date, st_started, st_submitted, st_aud_req,"
                 " st_aud_comp, st_admitted, st_accepted, st_enrolled, dedup_seq,"
                 " first_upload_id,"
                 " last_upload_id)"
-                " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                 (program_key, global_id, fields["term"], fields["country"],
                  fields["region"], fields["city"], fields["postal"], fields["age"],
                  fields["emphasis"], fields["degree"], fields["bfa_pathway"],
-                 fields["term_start"],
+                 fields["term_start"], fields["deferred"],
                  fields["decision"], fields["app_status"],
                  fields["started_date"], fields["submitted_date"],
                  fields["completed_date"],
@@ -359,6 +361,7 @@ def ingest(conn, path_or_stream, program_key, filename, sha256=None):
                 "UPDATE applicants SET"
                 "  term=CASE WHEN ?<>'' THEN ? ELSE term END,"
                 "  term_start=CASE WHEN ?<>'' THEN ? ELSE term_start END,"
+                "  deferred=MAX(deferred, ?),"
                 "  country=CASE WHEN ?<>'' THEN ? ELSE country END,"
                 "  region=CASE WHEN ?<>'' THEN ? ELSE region END,"
                 "  city=CASE WHEN ?<>'' THEN ? ELSE city END,"
@@ -380,6 +383,7 @@ def ingest(conn, path_or_stream, program_key, filename, sha256=None):
                 " WHERE id=?",
                 (fields["term"], fields["term"],
                  fields["term_start"], fields["term_start"],
+                 fields["deferred"],
                  fields["country"], fields["country"],
                  fields["region"], fields["region"], fields["city"], fields["city"],
                  fields["postal"], fields["postal"], fields["age"],
@@ -463,6 +467,8 @@ def ingest(conn, path_or_stream, program_key, filename, sha256=None):
         " pings_duplicate=?, notes=? WHERE id=?",
         (n_new, n_upd, pings_new, pings_dup, "\n".join(warnings), upload_id),
     )
+    from .db import mark_clones
+    mark_clones(conn)   # a new upload can create or resolve a clone
     conn.commit()
 
     return {

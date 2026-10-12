@@ -294,6 +294,37 @@ class Program:
         return None, bad
 
 
+# Full-Time, as exported from 2026-10-12 on: five columns appended at 22-26 --
+# Audition Requested / Audition Complete / Admitted / Enrolled dates and a
+# "Deferred Applicant" marker. Appended, so the 2026-09 layout's anchors still
+# match a new file; this one must sit FIRST in Program.layouts or the new
+# columns are silently ignored.
+#
+# Only `deferred` is mapped for now (it identifies deferral clones -- see
+# db._mark_clones). The stage dates are deliberately NOT mapped yet: whether
+# and how to use them is Eric's open decision (Audition Requested Date has
+# gaps). "Enrolled Date" is picked up regardless, by programs.enrolled_index.
+FT_2026_10 = Layout(
+    name="2026-10 (stage dates + Deferred Applicant)",
+    utm_idx=(15, 16, 17, 18),
+    cols={
+        "global_id": 0, "term": 1,
+        "started_date": 2, "submitted_date": 3, "completed_date": 4,
+        "aud_requested": 5, "aud_pending": 6, "aud_complete": 7, "admitted": 8,
+        "decision": 9,
+        "country": 10, "region": 11, "city": 12, "postal": 13, "age": 14,
+        "referral_info": 19, "emphasis": 20, "bfa_pathway": 21,
+        "deferred": 26,
+    },
+    anchors={
+        0: "global id", 1: "term", 2: "started", 8: "admitted",
+        15: "utm source", 16: "utm medium", 17: "utm campaign", 18: "utm content",
+        19: "referral", 20: "emphasis", 21: "bfa pathway",
+        22: "audition requested date", 23: "audition complete date",
+        24: "admitted date", 25: "enrolled date", 26: "deferred",
+    },
+)
+
 # Full-Time, as exported from 2026-09-23 on: "Application BFA Pathway" appended
 # at 21, holding "3-year"/"4-year" for BFA applicants and blank for everyone
 # else. Appended, not inserted, so FT_2026_08's anchors still match this file —
@@ -360,7 +391,7 @@ FT_2026_07 = Layout(
 FT = Program(
     key="ft",
     label="Full-Time",
-    layouts=[FT_2026_09, FT_2026_08, FT_2026_07],
+    layouts=[FT_2026_10, FT_2026_09, FT_2026_08, FT_2026_07],
     has_degree=True,
     stage_keys=["started", "submitted", "aud_req", "aud_comp", "admitted",
                 "enrolled"],

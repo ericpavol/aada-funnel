@@ -66,6 +66,12 @@ CREATE TABLE IF NOT EXISTS applicants (
     -- First day of the term's start month, derived from `term`. The earliest
     -- anyone on that term can be enrolled -- see programs.term_start.
     term_start      TEXT NOT NULL DEFAULT '',
+    -- Slate's "Deferred Applicant" marker (2026-10 export on).
+    deferred        INTEGER NOT NULL DEFAULT 0,
+    -- 1 = a deferral clone: Slate copies an accepted application when the
+    -- student defers, so the same person shows up again as a brand-new,
+    -- already-admitted start. Derived, never imported -- see _mark_clones.
+    is_clone        INTEGER NOT NULL DEFAULT 0,
     decision        TEXT NOT NULL DEFAULT '',
     app_status      TEXT NOT NULL DEFAULT '',
     started_date    TEXT NOT NULL DEFAULT '',
@@ -221,6 +227,8 @@ _ADDED_COLUMNS = [
     ("applicants", "degree", "TEXT NOT NULL DEFAULT ''"),
     ("applicants", "bfa_pathway", "TEXT NOT NULL DEFAULT ''"),
     ("applicants", "term_start", "TEXT NOT NULL DEFAULT ''"),
+    ("applicants", "deferred", "INTEGER NOT NULL DEFAULT 0"),
+    ("applicants", "is_clone", "INTEGER NOT NULL DEFAULT 0"),
 ]
 
 
@@ -233,6 +241,7 @@ def _migrate(conn):
     _migrate_emphasis(conn)
     _backfill_degree(conn)
     _backfill_term_start(conn)
+    mark_clones(conn)
     conn.commit()
 
 
@@ -251,6 +260,45 @@ def _migrate_emphasis(conn):
         if new != old:
             conn.execute("UPDATE applicants SET emphasis=? WHERE emphasis=?",
                          (new, old))
+
+
+def mark_clones(conn):
+    """Flag deferral clones so every count can leave them out.
+
+    Slate (confirmed by their team, 2026-10-12): when an accepted student
+    defers, the application is CLONED -- the original stays on file for its
+    cycle and a new, already-admitted application is opened for the new term.
+    The clone carries a fresh start date, so left alone it counts as a new
+    applicant this year and inflates Started, Submitted and Admitted.
+
+    A row is a clone when the same person has an EARLIER-started row that was
+    also admitted, and either Slate marks it "Deferred Applicant" or it is
+    admitted with no completed date AND was started and submitted the same day
+    (Slate creates the copy in one step). Each test guards a real case: ~7% of
+    genuine admits lack a completed date, and a student accepted for one term
+    can genuinely apply again later (155027697: accepted Fall 2025, applied for
+    January 2026 six weeks later, enrolled) -- that second application took
+    weeks to submit, so the same-day test keeps it.
+    Slate's own Deferred flag is not enough either -- it missed at least one
+    clone (014479613) in the first export that carried it.
+
+    Recomputed from scratch on every connect and after every upload.
+    """
+    conn.execute("UPDATE applicants SET is_clone = 0 WHERE is_clone <> 0")
+    conn.execute("""
+        UPDATE applicants SET is_clone = 1
+         WHERE st_admitted = 1
+           AND (deferred = 1
+                OR (completed_date = ''
+                    AND submitted_date <> ''
+                    AND submitted_date = substr(started_date, 1, 10)))
+           AND EXISTS (SELECT 1 FROM applicants o
+                        WHERE o.program = applicants.program
+                          AND o.global_id = applicants.global_id
+                          AND o.id <> applicants.id
+                          AND o.st_admitted = 1
+                          AND o.started_date <> ''
+                          AND o.started_date < applicants.started_date)""")
 
 
 def _backfill_term_start(conn):

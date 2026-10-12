@@ -2539,3 +2539,56 @@ def test_utm_page_can_show_all_values(tmp_path, monkeypatch):
     monkeypatch.setattr(_main, "DB_PATH", dbpath)
     page = TestClient(_main.app).get("/utm?program=ft&dates=all&field=content&limit=all").text
     assert "showing all" in page and "more value(s) not shown" not in page
+
+
+# ---------------------------------------------------------------------------
+# Deferral clones (Slate, 2026-10-12)
+# ---------------------------------------------------------------------------
+
+def _app(conn, gid, term, started, submitted, completed, admitted, deferred=0):
+    conn.execute(
+        "INSERT INTO applicants (program, global_id, term, started_date, submitted_date,"
+        " completed_date, st_started, st_submitted, st_admitted, deferred)"
+        " VALUES ('ft',?,?,?,?,?,1,?,?,?)",
+        (gid, term, started, submitted, completed, 1 if submitted else 0, admitted, deferred))
+
+
+def test_deferral_clones_are_marked_and_left_out_of_every_count():
+    conn = db.connect(":memory:")
+    # Clone, unflagged by Slate (the 014479613 shape).
+    _app(conn, "A", "January 2027 (Spring)", "2025-08-14", "2025-12-10", "2026-02-03", 1)
+    _app(conn, "A", "January 2027 (Spring)", "2026-09-24", "2026-09-24", "", 1)
+    # Clone, flagged by Slate.
+    _app(conn, "B", "January 2027 (Spring)", "2026-04-02", "2026-06-19", "2026-07-12", 1)
+    _app(conn, "B", "January 2027 (Spring)", "2026-10-01", "2026-10-01", "", 1, deferred=1)
+    # Genuine re-application (the 155027697 shape): took weeks to submit.
+    _app(conn, "C", "Fall 2025 (August 2025)", "2025-08-20", "2025-08-27", "", 1)
+    _app(conn, "C", "January 2026 (Spring)", "2025-10-08", "2025-11-07", "", 1)
+    # Genuine new admit with no completed date and no earlier application.
+    _app(conn, "D", "Fall 2027", "2026-09-26", "2026-09-26", "", 1)
+    db.mark_clones(conn)
+    flagged = {r[0] for r in conn.execute(
+        "SELECT global_id FROM applicants WHERE is_clone=1")}
+    assert flagged == {"A", "B"}
+
+    flt = filters.Filters(programs.get("ft"))
+    n = conn.execute("SELECT COUNT(*), SUM(st_admitted) FROM applicants WHERE "
+                     + flt.where, flt.params).fetchone()
+    assert tuple(n) == (5, 5), "clones must not be counted"
+    conn.close()
+
+
+def test_canonical_sample_has_no_clones(ft_db):
+    assert ft_db.execute("SELECT COUNT(*) FROM applicants WHERE is_clone=1").fetchone()[0] == 0
+
+
+def test_2026_10_layout_reads_the_deferred_column():
+    prog = programs.get("ft")
+    headers = (["Global ID", "Full-Time App Term", "Started FT App Date"] + ["x"] * 5
+               + ["Admitted"] + ["x"] * 6
+               + ["UTM Source", "UTM Medium", "UTM Campaign", "UTM Content",
+                  "Referral Info", "Application Program Emphasis", "Application BFA Pathway",
+                  "Audition Requested Date", "Audition Complete Date", "Admitted Date",
+                  "Enrolled Date", "Deferred Applicant"])
+    layout, _ = prog.layout_for(headers)
+    assert layout is not None and layout.cols.get("deferred") == 26

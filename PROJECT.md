@@ -58,7 +58,7 @@ Summer: 4,483 → 954 → 387.
 FY 2025/26 paid media: **$288,357** (Google $140,222 · Meta $148,135).
 Blended first-touch cost per started app ≈ **$51**.
 
-**103 tests** pass against the real sample files. If a change moves any canonical
+**109 tests** pass against the real sample files. If a change moves any canonical
 number above, that is a regression until proven otherwise.
 
 ---
@@ -536,6 +536,33 @@ age band, channel touched). Totals only — see ground rule 1.
   Render's Environment — and only once Eric says so.
 * Eric's working answer for now is to ask Claude Code directly, which reads the
   local copy of the same exports — no key, no per-question bill.
+
+### Deferral clones are left out of every count
+Slate's team (2026-10-12): when an accepted student defers, the application is
+**cloned** — the original stays on file for its cycle, and a new, already-
+admitted application opens for the new term, with a fresh start date. The Ping
+Data report doesn't filter out the inactive copy, so each deferral showed up as
+a brand-new, already-admitted applicant this year. On the 12 Oct export that
+was 23 of FY 2026/27's 24 "admits" (Eric chose Option A: exclude them here).
+
+`db.mark_clones` sets `is_clone` on every connect and after every upload;
+`Filters` adds `is_clone = 0` to its base clause, so every page, chart, filter
+count and comparison leaves them out. A row is a clone when the same person has
+an **earlier, admitted** application and either Slate marks it "Deferred
+Applicant" or it is admitted with no completed date **and started and submitted
+the same day** (Slate creates the copy in one step). Each test is load-bearing:
+Slate's own flag missed a clone (014479613); ~7% of real admits lack a
+completed date; and a genuine re-application (155027697 — accepted Fall 2025,
+applied for January 2026 six weeks later, enrolled) took weeks to submit, so
+the same-day test keeps it. The canonical July sample has no clones and still
+reads 8,436.
+
+The 2026-10 layout (`FT_2026_10`) maps only `deferred` from the five new
+columns. The stage dates are not used yet — Audition Requested Date has gaps
+(32% missing for FY 2026/27) and how to handle it is Eric's open decision.
+"Enrolled Date" is picked up automatically by `enrolled_index`, which moves
+Enrolled from 105 to 107 (two people with an enrolled date later deferred or
+withdrew).
 
 ## Analytical decisions worth not re-litigating
 
