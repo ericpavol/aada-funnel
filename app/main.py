@@ -755,6 +755,7 @@ def overview(request: Request):
                     "prior": r["prior"], "prior_pct": ppct,
                     "comparable": r["comparable"],
                     "note": note, "dated": r["current"] if note else None,
+                    "dated_pct": cpct if note else None,
                     # Change in the NUMBER of people, alongside the change in
                     # conversion below -- the two answer different questions
                     # (more people vs. a larger share of them getting through).

@@ -127,7 +127,7 @@
           <span class="r">This year</span>
           <span class="r" title="Same point last year: {{ funnel_yoy.window[0] }} → {{ funnel_yoy.window[1] }}">Last year</span>
           <span class="r" title="Change in the number of people">Change</span>
-          <span class="r" title="Change in the share of Started who reached this stage, in percentage points">Conv.</span>
+          <span class="r" title="Change in conversion rate, in percentage points: this year's % of Started minus last year's. Example: 13.0% this year vs 9.6% last year = +3.4 pts. It is a difference, not a multiple.">Conv. change (pts)</span>
         </div>
       {% endif %}
       {# With last year shown, both years' bars share ONE scale -- the larger
@@ -215,6 +215,11 @@
             {# Started's share is always 100%, so it is left blank -- but the
                slot stays, so its number lines up with the rows below. #}
             <span class="step-pct">{% if not loop.first %}{{ s.pct_of_started|pct }}{% endif %}</span>
+            {% if fy and fy.note %}
+              {# The YoY columns for this stage use only dated rows; show that
+                 count here so the change and pts visibly add up. #}
+              <span class="step-dated" title="{{ fy.note }} Last year, Change and Conv. change use only these.">{{ fy.dated|num }} dated · {{ fy.dated_pct|pct }}</span>
+            {% endif %}
           </div>
           {% if fy %}
             <div class="step-val step-prior" title="Same point last year">
