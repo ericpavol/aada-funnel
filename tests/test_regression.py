@@ -2704,3 +2704,47 @@ def test_deferral_filter_hides_or_isolates_copies(ft_db):
     dims = {d["key"] for d in filters.describe(prog, facets, filters.Filters(prog))["dimensions"]}
     assert "deferral" in dims
     conn.execute("UPDATE applicants SET is_clone=0")
+
+
+def test_uploaded_files_are_saved_for_download_and_can_be_deleted(tmp_path, monkeypatch):
+    from fastapi.testclient import TestClient
+    from app import main
+    dbp = str(tmp_path / "funnel.db")
+    monkeypatch.setattr(main, "DB_PATH", dbp)
+    monkeypatch.setattr(main.auth, "require_login", lambda: None, raising=False)
+    main.app.dependency_overrides[main.auth.require_login] = lambda: None
+    try:
+        c = TestClient(main.app)
+        payload = open(FT_FILE, "rb").read()
+        r = c.post("/uploads", data={"program": "ft"},
+                   files={"files": ("Ping Data - FT.xlsx", payload)}, follow_redirects=False)
+        assert r.status_code == 303 and "ok=" in r.headers["location"]
+        conn = db.connect(dbp)
+        row = conn.execute("SELECT * FROM stored_files").fetchone()
+        assert row["filename"] == "Ping Data - FT.xlsx" and row["size"] == len(payload)
+        got = c.get("/files/%d" % row["id"])
+        assert got.status_code == 200 and got.content == payload
+        assert "Ping%20Data%20-%20FT.xlsx" in got.headers["content-disposition"]
+        assert "Saved <span" in c.get("/uploads").text
+        bad = c.post("/files/%d/delete" % row["id"], headers={"origin": "https://evil.example"},
+                     follow_redirects=False)
+        assert bad.status_code == 403
+        c.post("/files/%d/delete" % row["id"], follow_redirects=False)
+        assert conn.execute("SELECT COUNT(*) FROM stored_files").fetchone()[0] == 0
+        assert c.get("/files/%d" % row["id"]).status_code == 404
+        assert conn.execute("SELECT COUNT(*) FROM applicants").fetchone()[0] > 0
+        conn.close()
+    finally:
+        main.app.dependency_overrides.clear()
+
+
+def test_audition_requested_falls_back_to_submitted_date(tmp_path):
+    from app import programs as P
+    conn = db.connect(str(tmp_path / "t.db"))
+    expr = P.get("ft").stage_dates["aud_req"]
+    conn.execute("INSERT INTO applicants (program, global_id, aud_req_date, submitted_date)"
+                 " VALUES ('ft','a','2026-09-05','2026-09-01'), ('ft','b','','2026-09-02'),"
+                 " ('ft','c','','')")
+    got = [r[0] for r in conn.execute("SELECT %s FROM applicants ORDER BY global_id" % expr)]
+    assert got == ["2026-09-05", "2026-09-02", ""]
+    conn.close()

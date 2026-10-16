@@ -334,6 +334,48 @@
   {% endif %}
 </section>
 
+{# ---------- saved original files ---------- #}
+<section class="card pad0" id="files">
+  <div style="padding:18px 20px 0">
+    <div class="eyebrow">Originals</div>
+    <h2 class="display">Saved <span class="serif-it">files</span></h2>
+    <div class="sub" style="margin:5px 0 14px">Every file that loads is kept here so you
+      can download it again. Deleting a file removes only the saved copy; the data it
+      loaded stays in the app. {{ stored.files|length }} file(s), {{ stored.total|filesize }}
+      {%- if stored.free is not none %} · {{ stored.free|filesize }} free on the disk{% endif %}.</div>
+  </div>
+  {% if stored.files %}
+    <div class="tablewrap">
+    <table>
+      <thead><tr>
+        <th class="chan">Saved</th><th class="chan">File</th><th class="chan">Type</th>
+        <th>Size</th><th class="chan"></th>
+      </tr></thead>
+      <tbody>
+        {% for f in stored.files %}
+          <tr>
+            <td class="chan">{{ f['saved_at'] }}</td>
+            <td class="chan">{{ f['filename'] }}</td>
+            <td class="chan">{{ programs[f['kind']].label if f['kind'] in programs else f['kind']|replace('spend_', 'Spend · ')|replace('referrals', 'Referrer log') }}</td>
+            <td>{{ f['size']|filesize }}</td>
+            <td class="chan" style="white-space:nowrap">
+              <a href="/files/{{ f['id'] }}">Download</a>
+              <form method="post" action="/files/{{ f['id'] }}/delete" style="display:inline;margin-left:12px"
+                    onsubmit='return confirm({{ ("Delete the saved copy of " ~ f["filename"] ~ "? The data stays in the app.")|tojson }})'>
+                <button type="submit" class="linkbtn">Delete</button>
+              </form>
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    </div>
+  {% else %}
+    <div class="hint" style="padding:0 20px 18px">No saved files yet. Files uploaded
+      from now on appear here; earlier uploads were not kept.</div>
+  {% endif %}
+</section>
+
 {# ---------- history ---------- #}
 <section class="card pad0">
   <div style="padding:18px 20px 0">

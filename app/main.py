@@ -9,12 +9,12 @@ import datetime as _dt
 import os
 from typing import Optional
 
-from fastapi import Body, Depends, FastAPI, File, Form, Request, UploadFile
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi import Body, Depends, FastAPI, File, Form, HTTPException, Request, UploadFile
+from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
-from . import auth, chat, db, filters, ingest, metrics, programs, spend, taxonomy
+from . import auth, chat, db, filestore, filters, ingest, metrics, programs, spend, taxonomy
 
 # Refuses to import (and therefore to boot) on a half-configured credential pair.
 # See app/auth.py -- this is what makes a typo'd env var a startup failure
@@ -258,6 +258,18 @@ def _asset(path):
 
 templates.env.filters["pct"] = _pct
 templates.env.filters["num"] = _num
+
+
+def _filesize(n):
+    if n is None:
+        return "—"
+    for unit in ("bytes", "KB", "MB", "GB"):
+        if n < 1024 or unit == "GB":
+            return ("%d %s" % (n, unit)) if unit == "bytes" else ("%.1f %s" % (n, unit))
+        n /= 1024.0
+
+
+templates.env.filters["filesize"] = _filesize
 templates.env.globals["qs"] = _qs
 templates.env.globals["qs_drop"] = _qs_drop
 templates.env.globals["qs_with"] = _qs_with
@@ -1189,11 +1201,12 @@ def uploads(request: Request, ok: Optional[str] = None, err: Optional[str] = Non
         spend_history = conn.execute(
             "SELECT * FROM spend_uploads ORDER BY id DESC LIMIT 25").fetchall()
         coverage = spend.meta_ad_coverage(conn, program.key)
+        stored = filestore.listing(conn, DB_PATH)
         return templates.TemplateResponse("uploads.html", _ctx(
             request, conn, program, flt,
             history=history, ref_history=ref_history, unknown=unknown,
             totals=totals, ref_pings=ref_pings, ok=ok, err=err,
-            spend_history=spend_history, coverage=coverage,
+            spend_history=spend_history, coverage=coverage, stored=stored,
         ))
     finally:
         conn.close()
@@ -1232,6 +1245,13 @@ async def do_upload(request: Request, program: str = Form("auto"),
                 errors.append("%s: %s" % (name, err))
             else:
                 results.append(msg + detected)
+                try:
+                    filestore.save(conn, DB_PATH, ingest.sha256_of(payload), name,
+                                   kind, payload)
+                except OSError as exc:
+                    # The data is already in; only the saved copy failed.
+                    results.append("%s: loaded, but the copy for download could"
+                                   " not be saved (%s)" % (name, exc))
 
         parts = []
         if results:
@@ -1286,6 +1306,35 @@ def _ingest_one(conn, program, name, payload, spend_program):
     except (ingest.IngestError, spend.SpendError) as exc:
         return None, str(exc)[:400]
     return msg, None
+
+
+@app.get("/files/{file_id}")
+def download_file(file_id: int):
+    conn = get_conn()
+    try:
+        row, path = filestore.get(conn, DB_PATH, file_id)
+        if not row:
+            raise HTTPException(status_code=404, detail="File not found")
+        return FileResponse(path, filename=row["filename"],
+                            media_type="application/octet-stream")
+    finally:
+        conn.close()
+
+
+@app.post("/files/{file_id}/delete")
+def delete_file(file_id: int, request: Request):
+    # Deleting is the one irreversible action here: refuse a cross-site POST
+    # (the browser would attach the cached login to it).
+    origin = request.headers.get("origin")
+    if origin and origin.split("://", 1)[-1] != request.headers.get("host"):
+        raise HTTPException(status_code=403, detail="Cross-site request refused")
+    conn = get_conn()
+    try:
+        filestore.delete(conn, DB_PATH, file_id)
+        return RedirectResponse("/uploads?ok=Saved+file+deleted.+Its+data+stays"
+                                "+in+the+app.#files", status_code=303)
+    finally:
+        conn.close()
 
 
 @app.post("/unknown/{unknown_id}/ack")

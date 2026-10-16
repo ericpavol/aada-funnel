@@ -34,6 +34,17 @@ SCHEMA = """
 PRAGMA journal_mode = WAL;
 PRAGMA foreign_keys = ON;
 
+-- Original upload files kept for download (app/filestore.py). The bytes live
+-- on disk, named by sha256; this table is the index.
+CREATE TABLE IF NOT EXISTS stored_files (
+    id        INTEGER PRIMARY KEY,
+    sha256    TEXT NOT NULL UNIQUE,
+    filename  TEXT NOT NULL,
+    kind      TEXT NOT NULL DEFAULT '',
+    size      INTEGER NOT NULL DEFAULT 0,
+    saved_at  TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS uploads (
     id                 INTEGER PRIMARY KEY,
     program            TEXT NOT NULL CHECK (program IN ('ft','summer')),

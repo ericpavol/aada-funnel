@@ -58,7 +58,7 @@ Summer: 4,483 → 954 → 387.
 FY 2025/26 paid media: **$288,357** (Google $140,222 · Meta $148,135).
 Blended first-touch cost per started app ≈ **$51**.
 
-**114 tests** pass against the real sample files. If a change moves any canonical
+**116 tests** pass against the real sample files. If a change moves any canonical
 number above, that is a regression until proven otherwise.
 
 ---
@@ -577,6 +577,19 @@ puts a ⚠ on the stage, and its YoY columns compare dated-vs-dated (only people
 with the date, on both sides), while the main count stays the flag headcount.
 Rows only seen in exports before 2026-10 have no stage dates, so upload a
 current full export before reading these comparisons.
+
+**Walk-in fallback (2026-10-16).** Eric: applicants with no Audition Requested
+Date are mostly walk-in auditions, so their submitted date stands in, for both
+years (`programs.AUD_REQ_DATE_SQL`; `stage_dates` values are SQL expressions).
+That closes most of the gap (FY 2026/27: 92 of 94 dated). The ⚠ popover states
+the assumption; the "N dated" line only appears while some rows still have
+neither date.
+
+**Saved upload files (2026-10-16).** Every file that loads is kept next to the
+DB (`/var/data/uploads/<sha256>` on Render) and indexed in `stored_files`
+(`app/filestore.py`). Data page → "Saved files": Download, or Delete (removes
+only the copy; the data stays). Delete refuses cross-site POSTs. Uploads from
+before this date were not kept.
 
 **Deferral filter** (`deferral=exclude|only`, "Deferral copies" in Add filter)
 hides or isolates `is_clone` rows. Shown only when the program has copies.

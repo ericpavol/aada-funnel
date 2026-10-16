@@ -1,8 +1,9 @@
 {% extends "base.html" %}
 {% macro gap_note(fy, s) -%}
-<p><b>Slate is missing some dates for this stage.</b> {{ s.n|num }} people reached {{ s.label }} this year, but only {{ fy.dated|num }} have a {{ s.label }} date.</p>
-<p>To compare fairly with last year, <b>Last year</b>, <b>Change</b> and <b>Conv. change</b> count only people with a date, on both sides: {{ fy.dated|num }} ({{ fy.dated_pct|pct }}) this year vs {{ fy.prior|num }} ({{ fy.prior_pct|pct }}) last year.</p>
-<p>The big number ({{ s.n|num }}, {{ s.pct_of_started|pct }}) is the real headcount.</p>
+<p><b>Assumption:</b> {{ fy.note }} Walk-in applicants skip the usual audition request, so their submitted date is the best stand-in. Last year is treated the same way.</p>
+{% if fy.dated != s.n -%}
+<p>{{ (s.n - fy.dated)|num }} of this year's {{ s.n|num }} have neither date, so <b>Last year</b>, <b>Change</b> and <b>Conv. change</b> count only the {{ fy.dated|num }} with one, on both sides: {{ fy.dated|num }} ({{ fy.dated_pct|pct }}) this year vs {{ fy.prior|num }} ({{ fy.prior_pct|pct }}) last year. The big number ({{ s.n|num }}, {{ s.pct_of_started|pct }}) is the real headcount.</p>
+{%- endif %}
 {%- endmacro %}
 {% block title %}{{ program.label }} funnel — AADA{% endblock %}
 
@@ -220,7 +221,7 @@
             {# Started's share is always 100%, so it is left blank -- but the
                slot stays, so its number lines up with the rows below. #}
             <span class="step-pct">{% if not loop.first %}{{ s.pct_of_started|pct }}{% endif %}</span>
-            {% if fy and fy.note %}
+            {% if fy and fy.note and fy.dated != s.n %}
               {# The YoY columns for this stage use only dated rows; show that
                  count here so the change and pts visibly add up. #}
               <span class="step-dated tip tip-warn" tabindex="0" role="note">{{ fy.dated|num }} dated · {{ fy.dated_pct|pct }}<span class="tip-pop">{{ gap_note(fy, s) }}</span></span>

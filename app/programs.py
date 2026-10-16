@@ -297,6 +297,11 @@ class Program:
         return None, bad
 
 
+# Audition Requested date for year-over-year: Slate's date, else the submitted
+# date (walk-in auditions have no request date). See FT Program.stage_dates.
+AUD_REQ_DATE_SQL = "(CASE WHEN aud_req_date <> '' THEN aud_req_date ELSE submitted_date END)"
+
+
 # Full-Time, as exported from 2026-10-12 on: five columns appended at 22-26 --
 # Audition Requested / Audition Complete / Admitted / Enrolled dates and a
 # "Deferred Applicant" marker. Appended, so the 2026-09 layout's anchors still
@@ -420,11 +425,16 @@ FT = Program(
     # so "enrolled by day X" is exact for any X before the term begins -- which
     # covers every same-point comparison made early in a fiscal year.
     stage_dates={"started": "started_date", "submitted": "submitted_date",
-                 "aud_req": "aud_req_date", "aud_comp": "aud_comp_date",
+                 # Applicants with no Audition Requested Date are mostly
+                 # walk-in auditions, which skip the request step; their
+                 # submitted date stands in (Eric, 2026-10-16). Applied to both
+                 # years alike. Values here are SQL expressions, not just column
+                 # names -- every use interpolates them into a query.
+                 "aud_req": AUD_REQ_DATE_SQL, "aud_comp": "aud_comp_date",
                  "admitted": "admitted_date", "enrolled": "term_start"},
     stage_date_notes={
-        "aud_req": "Slate has no Audition Requested Date for some applicants "
-                   "who requested one, so this count may be low.",
+        "aud_req": "Applicants with no Audition Requested Date (mostly walk-in "
+                   "auditions) use their application submitted date instead.",
     },
     date_fields={
         "started_date": "App Start Date",
