@@ -1010,15 +1010,10 @@ code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11.5px;
 /* A stage whose Slate date has gaps (Program.stage_date_notes). */
 .stage-warn{color:var(--serious);cursor:help;margin-left:4px;font-size:.9em}
 .stage-warn-line{display:block;color:var(--serious);font-size:12px;margin-top:2px}
-/* "62 dated · 5.9%" under a gap-warned stage's count, on its own line. */
-.step-val:has(.step-dated){flex-wrap:wrap}
-.step-dated{flex-basis:100%;text-align:right;font-size:11px;color:var(--serious);
-  font-variant-numeric:tabular-nums;cursor:help;margin-top:-2px}
 /* Gap warning: the same hover/focus popover as the (i) tips, drawn as a bare
    warning glyph or as the "62 dated" line instead of a ringed circle. */
 .tip.tip-warn{width:auto;height:auto;border:0;border-radius:0;background:none;
   color:var(--serious);font:inherit;vertical-align:baseline;margin-left:4px}
 .tip.tip-warn:hover,.tip.tip-warn:focus-visible{color:var(--serious);text-decoration:underline dotted}
-.step-dated.tip.tip-warn{margin-left:0;justify-content:flex-end;font-size:11px}
 /* A form button that reads as a link (Saved files: Delete). */
 .linkbtn{background:none;border:0;padding:0;font:inherit;color:var(--critical);cursor:pointer;text-decoration:underline}

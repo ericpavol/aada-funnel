@@ -221,11 +221,6 @@
             {# Started's share is always 100%, so it is left blank -- but the
                slot stays, so its number lines up with the rows below. #}
             <span class="step-pct">{% if not loop.first %}{{ s.pct_of_started|pct }}{% endif %}</span>
-            {% if fy and fy.note and fy.dated != s.n %}
-              {# The YoY columns for this stage use only dated rows; show that
-                 count here so the change and pts visibly add up. #}
-              <span class="step-dated tip tip-warn" tabindex="0" role="note">{{ fy.dated|num }} dated · {{ fy.dated_pct|pct }}<span class="tip-pop">{{ gap_note(fy, s) }}</span></span>
-            {% endif %}
           </div>
           {% if fy %}
             <div class="step-val step-prior" title="Same point last year">
