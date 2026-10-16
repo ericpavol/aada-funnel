@@ -1,4 +1,9 @@
 {% extends "base.html" %}
+{% macro gap_note(fy, s) -%}
+<p><b>Slate is missing some dates for this stage.</b> {{ s.n|num }} people reached {{ s.label }} this year, but only {{ fy.dated|num }} have a {{ s.label }} date.</p>
+<p>To compare fairly with last year, <b>Last year</b>, <b>Change</b> and <b>Conv. change</b> count only people with a date, on both sides: {{ fy.dated|num }} ({{ fy.dated_pct|pct }}) this year vs {{ fy.prior|num }} ({{ fy.prior_pct|pct }}) last year.</p>
+<p>The big number ({{ s.n|num }}, {{ s.pct_of_started|pct }}) is the real headcount.</p>
+{%- endmacro %}
 {% block title %}{{ program.label }} funnel — AADA{% endblock %}
 
 {% from "_macros.html" import tip, series_tree, spend_coverage with context %}
@@ -143,7 +148,7 @@
             <span class="idx">{{ '%02d'|format(loop.index) }}</span>
             {{ s.label }}
             {% if fy and fy.note %}
-              <span class="stage-warn" title="{{ fy.note }} The year-over-year columns count only applicants who have the date: {{ fy.dated|num }} of {{ s.n|num }} this year.">⚠</span>
+              <span class="tip tip-warn" tabindex="0" role="note" aria-label="Why this stage's numbers differ">⚠<span class="tip-pop">{{ gap_note(fy, s) }}</span></span>
             {% endif %}
           </div>
           {% if overall_split %}
@@ -218,7 +223,7 @@
             {% if fy and fy.note %}
               {# The YoY columns for this stage use only dated rows; show that
                  count here so the change and pts visibly add up. #}
-              <span class="step-dated" title="{{ fy.note }} Last year, Change and Conv. change use only these.">{{ fy.dated|num }} dated · {{ fy.dated_pct|pct }}</span>
+              <span class="step-dated tip tip-warn" tabindex="0" role="note">{{ fy.dated|num }} dated · {{ fy.dated_pct|pct }}<span class="tip-pop">{{ gap_note(fy, s) }}</span></span>
             {% endif %}
           </div>
           {% if fy %}
