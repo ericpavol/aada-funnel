@@ -1778,6 +1778,12 @@ def cost_yoy(conn, program, flt, yoy):
             tot_p[k] += p_n.get(ch, {}).get(k, 0)
     blended = row("All paid", sum(v["cur_cost"] for v in chans.values()),
                   sum(v["prior_cost"] for v in chans.values()), tot_c, tot_p)
+    # Last year's bars for the cost chart: per stage, per channel.
+    chart = {"per": {k: {r["name"]: r["stages"][k]["prior_per"] for r in rows}
+                     for k in program.stage_keys},
+             "n": {k: {r["name"]: r["stages"][k]["prior_n"] for r in rows}
+                   for k in program.stage_keys}}
     return {"rows": rows, "blended": blended, "missing": missing, "prorate": prorate,
+            "chart": chart,
             "through": max((v["through"] for v in chans.values()), default=None),
             "people_through": yoy.get("as_of"), "has": bool(chans)}

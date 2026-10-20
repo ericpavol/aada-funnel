@@ -168,6 +168,18 @@
         ctx.textAlign = "left";
         ctx.fillText(text ? text[i] : fmt(v), bar.x + 8, bar.y);
       });
+      // A second series (the cost card's "last year") gets its own labels,
+      // muted, and none where it has no value.
+      for (var d = 1; d < chart.data.datasets.length; d++) {
+        var m = chart.getDatasetMeta(d);
+        if (m.hidden) continue;
+        ctx.fillStyle = opts.mutedColor || opts.color;
+        m.data.forEach(function (bar, i) {
+          var v = chart.data.datasets[d].data[i];
+          if (skip[i] || v == null) return;
+          ctx.fillText(fmt(v), bar.x + 8, bar.y);
+        });
+      }
       ctx.restore();
     }
   };
@@ -508,7 +520,24 @@
             borderSkipped: "start",
             barPercentage: .74,
             categoryPercentage: .86
-          }]
+          }].concat(opts.prior ? [{
+            // Last year, same point: the same channel hue, washed out, so the
+            // pair reads as one channel in two years.
+            label: opts.priorLabel || "Last year",
+            data: flat.map(function (f) { return opts.prior(f); }),
+            backgroundColor: flat.map(function (f) {
+              return mixToward(slotColour(t, slotOf(f), f.isSub), t.surface, .62);
+            }),
+            borderColor: flat.map(function (f) {
+              return mixToward(slotColour(t, slotOf(f), f.isSub), t.surface, .3);
+            }),
+            borderWidth: 1,
+            borderDash: [3, 2],
+            borderRadius: 4,
+            borderSkipped: "start",
+            barPercentage: .74,
+            categoryPercentage: .86
+          }] : [])
         },
         options: {
           indexAxis: "y",
@@ -516,19 +545,26 @@
           layout: {
             padding: {
               right: opts.endLabel ? 104 : 52,
-              top: opts.baseline == null ? 6 : 14
+              top: (opts.baseline == null ? 6 : 14) + (opts.prior ? 10 : 0)
             }
           },
           plugins: {
-            legend: { display: false },
+            legend: {
+              display: !!opts.prior,
+              position: "top", align: "end",
+              labels: { color: t.ink2, boxWidth: 12, boxHeight: 8, font: { size: 11 } }
+            },
             endLabels: {
               color: t.ink2,
+              mutedColor: t.ink3,
               fmt: opts.money ? money : pctFmt,
               text: opts.endLabel ? flat.map(opts.endLabel) : null,
               skip: flat.map(function (f) { return !!f.muted; })
             },
             tooltip: {
-              filter: function (c) { return !flat[c.dataIndex].muted; },
+              filter: function (c) {
+                return !flat[c.dataIndex].muted && c.raw != null;
+              },
               callbacks: {
                 title: function (c) {
                   var f = flat[c[0].dataIndex];
@@ -536,6 +572,7 @@
                 },
                 label: function (c) {
                   var f = flat[c.dataIndex];
+                  if (c.datasetIndex > 0 && opts.priorTooltip) return opts.priorTooltip(f, c.raw);
                   var lines = opts.tooltip(f.row, f);
                   if (f.expandable) {
                     lines = lines.concat([
@@ -1866,8 +1903,12 @@
   var COST = { payload: null, stage: null, attr: "first" };
 
   /** Overview card: cost per stage by channel, expanding to sub-sources. */
-  function costChart(payload, stage, attr) {
+  function costChart(payload, stage, attr, prior) {
     COST.payload = payload;
+    // {stage: {channel: last year's cost per stage}} from metrics.cost_yoy.
+    // First touch only, so it is drawn only under the first-touch lens.
+    COST.prior = prior ? prior.per : null;
+    COST.priorN = prior ? prior.n : null;
     COST.stage = stage;
     COST.attr = attr || "first";
     drawCost();
@@ -1920,7 +1961,18 @@
         hidden_subs: 0
       };
     }), {
-      seriesLabel: "cost per " + st.label.toLowerCase(),
+      seriesLabel: COST.prior && COST.attr === "first" ? "This year"
+        : "cost per " + st.label.toLowerCase(),
+      priorLabel: "Last year, same point",
+      prior: COST.prior && COST.attr === "first" ? function (f) {
+        var p = COST.prior[COST.stage];
+        return (!f.isSub && p && p[f.row.channel] != null) ? p[f.row.channel] : null;
+      } : null,
+      priorTooltip: function (f, v) {
+        var p = (COST.priorN || {})[COST.stage] || {};
+        return [money(v) + " per " + st.label.toLowerCase() + " last year, same point",
+                numFmt(p[f.row.channel] || 0) + " reached " + st.label + " (first touch)"];
+      },
       value: function (r) { return r.rate; },
       baseline: st.per || null,
       baselineLabel: "blended " + money(st.per),

@@ -831,7 +831,8 @@
                    {{ pen_payload|tojson }});
   AADA.wireTimelineControls({{ tl_client|tojson }});
   {% if cost.has_spend %}AADA.costChart({{ cost_payload|tojson }}, {{ cost_stage|tojson }},
-                                       {{ cost_attr|tojson }});{% endif %}
+                                       {{ cost_attr|tojson }},
+                                       {{ (cost_yoy.chart if cost_yoy and cost_yoy.has else none)|tojson }});{% endif %}
   AADA.wireStagePicks({{ stage_payload|tojson }},
                       {"cvs": {{ cmp_stage|tojson }}, "mvs": {{ mk_stage|tojson }}},
                       {{ program.channel_stage|tojson }});
