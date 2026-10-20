@@ -58,7 +58,7 @@ Summer: 4,483 → 954 → 387.
 FY 2025/26 paid media: **$288,357** (Google $140,222 · Meta $148,135).
 Blended first-touch cost per started app ≈ **$51**.
 
-**116 tests** pass against the real sample files. If a change moves any canonical
+**118 tests** pass against the real sample files. If a change moves any canonical
 number above, that is a regression until proven otherwise.
 
 ---
@@ -584,6 +584,14 @@ years (`programs.AUD_REQ_DATE_SQL`; `stage_dates` values are SQL expressions).
 That closes most of the gap (FY 2026/27: 92 of 94 dated). The ⚠ popover states
 the assumption; the "N dated" line only appears while some rows still have
 neither date.
+
+**Cost YoY (2026-10-20).** Overview cost card has a "vs last year · same
+point" block (`metrics.cost_yoy`): paid spend and cost per stage, blended and
+per paid channel, first touch, people dated as in `yoy_funnel`. Eric picked
+option 2: this year's partial month counts as uploaded; last year's matching
+month is scaled by days (e.g. 16/31 of Oct 2025, from the spend export's own
+end date) and marked as an estimate. A platform without spend in both years is
+listed as left out, never shown as $0. Stage chips toggle rows in place.
 
 **Saved upload files (2026-10-16).** Every file that loads is kept next to the
 DB (`/var/data/uploads/<sha256>` on Render) and indexed in `stored_files`

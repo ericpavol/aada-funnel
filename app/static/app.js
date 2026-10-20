@@ -1938,6 +1938,10 @@
   }
 
   function paintCostText(st) {
+    // Year-over-year rows: one set per stage, shown for the picked one.
+    document.querySelectorAll("[data-cyoy]").forEach(function (n) {
+      n.hidden = n.getAttribute("data-cyoy") !== COST.stage;
+    });
     document.querySelectorAll("[data-coststagelow]").forEach(function (n) {
       n.textContent = st.label.toLowerCase();
     });

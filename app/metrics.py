@@ -1647,3 +1647,137 @@ def _days_between(a, b):
         return (db_ - da).days
     except (ValueError, TypeError):
         return 0
+
+
+def _days_in_month(month):
+    import calendar
+    return calendar.monthrange(int(month[:4]), int(month[5:7]))[1]
+
+
+def cost_yoy(conn, program, flt, yoy):
+    """Paid media cost per stage, this year vs the same point last year.
+
+    Spend is monthly. This year's newest month is usually partial (an export
+    pulled on the 16th covers the 1st-16th), so last year's matching month is
+    scaled by days -- 16/31 of October 2025 -- and flagged as an estimate.
+    Eric chose this over full-months-only (2026-10-20) to keep the current
+    month in view. Every earlier month is compared whole.
+
+    People are the YoY cohorts (`yoy_funnel` windows): started in the window,
+    reached the stage by the window's last day (each stage's own date), first
+    touch on a paid channel. A platform counts only when it has spend in BOTH
+    years; one missing a side is reported in `missing`, never shown as $0.
+    """
+    cur, prior = yoy["current"], yoy["prior"]
+    base = flt.without("date")
+    platforms = [r[0] for r in conn.execute(
+        "SELECT DISTINCT platform FROM spend WHERE program=?", (program.key,))]
+
+    def spend_sum(platform, lo_month, hi_month):
+        return conn.execute(
+            "SELECT COALESCE(SUM(cost),0) FROM spend WHERE program=? AND platform=?"
+            " AND month>=? AND month<=?",
+            (program.key, platform, lo_month, hi_month)).fetchone()[0]
+
+    chans, missing, prorate = {}, [], None
+    for p in platforms:
+        channel = conn.execute("SELECT channel FROM spend WHERE program=? AND platform=?"
+                               " LIMIT 1", (program.key, p)).fetchone()[0]
+        last_month = conn.execute(
+            "SELECT MAX(month) FROM spend WHERE program=? AND platform=? AND month>=?"
+            " AND month<=?", (program.key, p, cur[0][:7], cur[1][:7])).fetchone()[0]
+        if not last_month:
+            missing.append({"channel": channel, "why": "no spend uploaded for this year"})
+            continue
+        # Where this year's spend really stops: the export's own end date when
+        # it falls in that month, else the month is taken as complete.
+        end = conn.execute(
+            "SELECT MAX(period_end) FROM spend_uploads WHERE program=? AND platform=?",
+            (program.key, p)).fetchone()[0] or ""
+        if end[:7] != last_month:
+            end = "%s-%02d" % (last_month, _days_in_month(last_month))
+        # Not capped at the Slate date: spend days are compared with the same
+        # spend days last year. People stop at yoy['as_of']; the page says so.
+        c_cost = spend_sum(p, cur[0][:7], last_month)
+
+        p_end = _shift_year(end)
+        p_month = p_end[:7]
+        p_full = conn.execute(
+            "SELECT COALESCE(SUM(cost),0), COUNT(*) FROM spend WHERE program=? AND platform=?"
+            " AND month>=? AND month<?", (program.key, p, prior[0][:7], p_month)).fetchone()
+        p_last = spend_sum(p, p_month, p_month)
+        has_prior = p_full[1] > 0 or p_last > 0
+        if not has_prior:
+            missing.append({"channel": channel, "why": "no spend uploaded for last year"})
+            continue
+        days, of = int(p_end[8:10]), _days_in_month(p_month)
+        share = days / of
+        p_cost = p_full[0] + p_last * share
+        if share < 1:
+            prorate = {"month": p_month, "days": days, "of": of,
+                       "estimated": p_last * share}
+        chans[channel] = {"channel": channel, "cur_cost": c_cost, "prior_cost": p_cost,
+                          "through": end, "prior_through": p_end}
+
+    def reached(lo, hi):
+        """{channel: {stage: n}} by first touch, for the cohort started in [lo, hi]."""
+        ids = [r[0] for r in conn.execute(
+            "SELECT id FROM applicants WHERE " + base.where +
+            " AND started_date<>'' AND started_date>=? AND started_date<=?",
+            list(base.params) + [lo, hi])]
+        if not ids:
+            return {}
+        first = {}
+        for chunk in range(0, len(ids), 900):
+            part = ids[chunk:chunk + 900]
+            for r in conn.execute(
+                    "SELECT applicant_id, channel FROM pings WHERE applicant_id IN (%s)"
+                    " ORDER BY applicant_id, CASE WHEN ts='' THEN 1 ELSE 0 END, ts, seq"
+                    % ",".join("?" * len(part)), part):
+                first.setdefault(r[0], r[1])
+        want = [i for i in ids if first.get(i) in chans]
+        out = defaultdict(lambda: defaultdict(int))
+        for chunk in range(0, len(want), 900):
+            part = want[chunk:chunk + 900]
+            cols = []
+            for k in program.stage_keys:
+                dc = program.stage_dates.get(k)
+                cols.append("(st_%s=1 AND %s<>'' AND %s<=?)" % (k, dc, dc) if dc
+                            else "(st_%s=1)" % k)
+            sql = ("SELECT id, %s FROM applicants WHERE id IN (%s)"
+                   % (", ".join(cols), ",".join("?" * len(part))))
+            prm = [hi for k in program.stage_keys if program.stage_dates.get(k)] + part
+            for r in conn.execute(sql, prm):
+                ch = first[r[0]]
+                for j, k in enumerate(program.stage_keys):
+                    out[ch][k] += 1 if r[j + 1] else 0
+        return out
+
+    c_n, p_n = reached(*cur), reached(*prior)
+
+    def per(cost, n):
+        return cost / n if (cost and n) else None
+
+    def row(name, cc, pc, cn, pn):
+        stages = {}
+        for k in program.stage_keys:
+            a, b = per(cc, cn.get(k, 0)), per(pc, pn.get(k, 0))
+            stages[k] = {"cur_n": cn.get(k, 0), "prior_n": pn.get(k, 0),
+                         "cur_per": a, "prior_per": b,
+                         "delta": (a - b) / b if (a is not None and b) else None}
+        return {"name": name, "cur_cost": cc, "prior_cost": pc,
+                "cost_delta": (cc - pc) / pc if pc else None, "stages": stages}
+
+    rows = [row(ch, v["cur_cost"], v["prior_cost"], c_n.get(ch, {}), p_n.get(ch, {}))
+            for ch, v in sorted(chans.items(), key=lambda kv: -kv[1]["cur_cost"])]
+    tot_c = defaultdict(int)
+    tot_p = defaultdict(int)
+    for ch in chans:
+        for k in program.stage_keys:
+            tot_c[k] += c_n.get(ch, {}).get(k, 0)
+            tot_p[k] += p_n.get(ch, {}).get(k, 0)
+    blended = row("All paid", sum(v["cur_cost"] for v in chans.values()),
+                  sum(v["prior_cost"] for v in chans.values()), tot_c, tot_p)
+    return {"rows": rows, "blended": blended, "missing": missing, "prorate": prorate,
+            "through": max((v["through"] for v in chans.values()), default=None),
+            "people_through": yoy.get("as_of"), "has": bool(chans)}

@@ -2748,3 +2748,53 @@ def test_audition_requested_falls_back_to_submitted_date(tmp_path):
     got = [r[0] for r in conn.execute("SELECT %s FROM applicants ORDER BY global_id" % expr)]
     assert got == ["2026-09-05", "2026-09-02", ""]
     conn.close()
+
+
+def test_cost_yoy_scales_last_years_partial_month_by_days(tmp_path):
+    """Eric's option 2 (2026-10-20): this year's spend runs to the 16th, so
+    last October counts 16/31 of its spend; earlier months count whole."""
+    conn = db.connect(str(tmp_path / "t.db"))
+    prog = programs.get("ft")
+    rows = [("2025-09", 3100.0), ("2025-10", 3100.0), ("2026-09", 1000.0), ("2026-10", 500.0)]
+    for m, c in rows:
+        conn.execute("INSERT INTO spend (program, platform, month, channel, sub_source,"
+                     " campaign, ad_id, cost, clicks, impressions) VALUES"
+                     " ('ft','google',?, 'Google (Paid)','PMax','c','',?,0,0)", (m, c))
+    conn.execute("INSERT INTO spend_uploads (program, platform, filename, sha256, uploaded_at,"
+                 " row_count, total_cost, period_start, period_end) VALUES"
+                 " ('ft','google','g.csv','s','2026-10-17',4,7700,'2025-09-01','2026-10-16')")
+    # One applicant each year, first touch Google, submitted.
+    for gid, started, sub in (("a", "2026-09-10", "2026-09-12"), ("b", "2025-09-10", "2025-09-12")):
+        cur = conn.execute("INSERT INTO applicants (program, global_id, started_date, submitted_date,"
+                           " st_started, st_submitted) VALUES ('ft',?,?,?,1,1)", (gid, started, sub))
+        conn.execute("INSERT INTO pings (applicant_id, ts, channel, sub_source) VALUES"
+                     " (?, ?, 'Google (Paid)', 'PMax')", (cur.lastrowid, started + " 10:00:00"))
+    # Slate data runs to 16 Oct too (the YoY window stops where Slate stops).
+    conn.execute("INSERT INTO applicants (program, global_id, started_date, st_started)"
+                 " VALUES ('ft','z','2026-10-16',1)")
+    flt = filters.Filters(prog, date_field="started_date", date_from="2026-09-01",
+                          date_to="2027-08-31")
+    y = metrics.yoy_funnel(conn, prog, flt, "2026-10-16")
+    r = metrics.cost_yoy(conn, prog, flt, y)
+    assert r["has"] and not r["missing"]
+    assert r["prorate"]["days"] == 16 and r["prorate"]["of"] == 31
+    b = r["blended"]
+    assert b["cur_cost"] == 1500.0
+    assert abs(b["prior_cost"] - (3100 + 3100 * 16 / 31)) < 0.01
+    assert b["stages"]["submitted"]["cur_n"] == 1 and b["stages"]["submitted"]["prior_n"] == 1
+    conn.close()
+
+
+def test_cost_yoy_leaves_out_a_platform_without_both_years(tmp_path):
+    conn = db.connect(str(tmp_path / "t.db"))
+    prog = programs.get("ft")
+    conn.execute("INSERT INTO spend (program, platform, month, channel, sub_source, campaign,"
+                 " ad_id, cost, clicks, impressions) VALUES"
+                 " ('ft','meta','2025-09','Meta Paid Social (IG/FB)','Instagram','c','',500,0,0)")
+    conn.execute("INSERT INTO applicants (program, global_id, started_date, st_started)"
+                 " VALUES ('ft','a','2026-09-10',1)")
+    flt = filters.Filters(prog, date_field="started_date", date_from="2026-09-01",
+                          date_to="2027-08-31")
+    r = metrics.cost_yoy(conn, prog, flt, metrics.yoy_funnel(conn, prog, flt, "2026-10-16"))
+    assert not r["has"] and r["missing"][0]["why"] == "no spend uploaded for this year"
+    conn.close()

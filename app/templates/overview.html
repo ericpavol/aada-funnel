@@ -546,6 +546,64 @@
           <small>from paid</small></span></div>
     </div>
 
+    {% if cost_yoy %}
+      {# Year over year, same point in the year. Every stage is rendered and
+         the stage chips above toggle which one shows (data-cyoy), so it
+         switches in place like the rest of the card. #}
+      {% macro money(v) %}{% if v is none %}—{% else %}${{ '{:,.0f}'.format(v) }}{% endif %}{% endmacro %}
+      {% macro chg(a, b, lower_is_good=true) -%}
+        {%- if a is none or not b -%}<span class="na">—</span>
+        {%- else -%}{% set d = (a - b) / b %}
+          <span class="{{ ('up' if d < 0 else 'down') if lower_is_good else 'flat' }}">{{ '+' if d >= 0 else '−' }}{{ (d|abs * 100)|round(0)|int }}%</span>
+        {%- endif -%}
+      {%- endmacro %}
+      <div class="costyoy">
+        <div class="costyoy-head">
+          <span class="eyebrow">vs last year · same point</span>
+          {{ tip([
+            'This year so far against the same days last year. People: started in each window and reached the stage by its last day, credited by <b>first touch</b> (this block stays first touch whichever “Credit to” is picked).',
+            ('Spend comes by the month. ' ~ (('Last year&#39;s ' ~ cost_yoy.prorate.month ~ ' is an <b>estimate</b>: ' ~ cost_yoy.prorate.days ~ ' of its ' ~ cost_yoy.prorate.of ~ ' days, matching how far this year&#39;s spend export runs (' ~ cost_yoy.through ~ '). It assumes spend was even across that month.') if cost_yoy.prorate else 'Every month here is complete in both years.')),
+            'People are counted through ' ~ (cost_yoy.people_through or '—') ~ ' (the Slate export). Lower cost per stage is green.',
+          ]) }}
+        </div>
+        {% if not cost_yoy.has %}
+          <p class="hint">Needs spend for both years.
+            {% for m in cost_yoy.missing %}{{ m.channel }}: {{ m.why }}.{% if not loop.last %} {% endif %}{% endfor %}
+            Upload it on the <a href="/uploads?{{ qs(filters) }}">Data</a> tab.</p>
+        {% else %}
+          <table class="costyoy-t">
+            <thead><tr><th></th><th>This year</th><th>Last year</th><th>Change</th></tr></thead>
+            <tbody>
+              {% set b = cost_yoy.blended %}
+              <tr><td>Paid media</td><td>{{ money(b.cur_cost) }}</td>
+                <td>{{ money(b.prior_cost) }}{% if cost_yoy.prorate %}<sup title="Includes an estimated part-month">*</sup>{% endif %}</td>
+                <td>{{ chg(b.cur_cost, b.prior_cost, false) }}</td></tr>
+              {% for k in cost_stage_opts %}
+                {% set st = b.stages[k] %}
+                <tr data-cyoy="{{ k }}"{{ '' if k == cost_stage else ' hidden' }}>
+                  <td><b>Per {{ program.stage_labels[k]|lower }}</b></td>
+                  <td><b>{{ money(st.cur_per) }}</b> <small>{{ st.cur_n|num }}</small></td>
+                  <td>{{ money(st.prior_per) }} <small>{{ st.prior_n|num }}</small></td>
+                  <td>{{ chg(st.cur_per, st.prior_per) }}</td></tr>
+                {% for r in cost_yoy.rows %}
+                  {% set cs = r.stages[k] %}
+                  <tr class="sub" data-cyoy="{{ k }}"{{ '' if k == cost_stage else ' hidden' }}>
+                    <td>{{ r.name }}</td>
+                    <td>{{ money(cs.cur_per) }} <small>{{ cs.cur_n|num }}</small></td>
+                    <td>{{ money(cs.prior_per) }} <small>{{ cs.prior_n|num }}</small></td>
+                    <td>{{ chg(cs.cur_per, cs.prior_per) }}</td></tr>
+                {% endfor %}
+              {% endfor %}
+            </tbody>
+          </table>
+          {% if cost_yoy.missing %}
+            <p class="hint">Left out: {% for m in cost_yoy.missing %}{{ m.channel }} ({{ m.why }}){% if not loop.last %}, {% endif %}{% endfor %}.</p>
+          {% endif %}
+          <p class="hint">Small numbers under each cost are the people who reached the stage.{% if cost_yoy.prorate %} * Last year includes an estimated part of {{ cost_yoy.prorate.month }}.{% endif %}</p>
+        {% endif %}
+      </div>
+    {% endif %}
+
     <div class="chartbox" style="padding:2px 20px 16px"><canvas id="costChart"></canvas></div>
     <p class="sub" style="padding:0 20px 2px;margin:0">
       <a href="/cost?{{ qs(filters) }}">Full cost breakdown →</a></p>

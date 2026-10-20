@@ -572,6 +572,8 @@ def overview(request: Request):
         cost_payload = _cost_payload(conn, program, flt, any_touch, first_touch,
                                      program.stage_keys, cost["months"],
                                      reach=cost_reach, last_matrix=last_touch)
+        # Same card, year over year (first touch, same point in the year).
+        cost_yoy = metrics.cost_yoy(conn, program, flt, yoy) if yoy else None
 
         # Every stage ships with the page so the two "measured against" controls
         # redraw in the browser instead of costing a reload — the same trade the
@@ -791,7 +793,7 @@ def overview(request: Request):
             chart_first_touch=chart_first_touch, cost=cost,
             cost_stage=cost_stage, cost_stage_opts=program.stage_keys,
             cost_attr=cost_attr, attributions=ATTRIBUTIONS,
-            cost_payload=cost_payload,
+            cost_payload=cost_payload, cost_yoy=cost_yoy,
             overall_split=overall_split,
             yoy=yoy, funnel_yoy=funnel_yoy,
             chart_penetration=chart_penetration,
