@@ -58,7 +58,7 @@ Summer: 4,483 → 954 → 387.
 FY 2025/26 paid media: **$288,357** (Google $140,222 · Meta $148,135).
 Blended first-touch cost per started app ≈ **$51**.
 
-**118 tests** pass against the real sample files. If a change moves any canonical
+**119 tests** pass against the real sample files. If a change moves any canonical
 number above, that is a regression until proven otherwise.
 
 ---
@@ -592,6 +592,14 @@ option 2: this year's partial month counts as uploaded; last year's matching
 month is scaled by days (e.g. 16/31 of Oct 2025, from the spend export's own
 end date) and marked as an estimate. A platform without spend in both years is
 listed as left out, never shown as $0. Stage chips toggle rows in place.
+
+**Meta totals row (2026-10-22).** Meta's raw report can open with a totals
+row (no month, whole period) equal to all monthly rows; it was stored as
+undated spend and doubled Meta, and the cost card's headline (which includes
+undated spend) disagreed with the YoY box (which does not). `parse_meta` now
+skips a monthless row when the file is split by month, takes the LATEST
+"Reporting ends", a dated upload clears that platform's undated rows, and a
+migration drops undated spend beside dated spend. WhatsApp maps to Other Meta.
 
 **Saved upload files (2026-10-16).** Every file that loads is kept next to the
 DB (`/var/data/uploads/<sha256>` on Render) and indexed in `stored_files`

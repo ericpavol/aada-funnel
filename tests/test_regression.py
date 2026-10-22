@@ -2798,3 +2798,30 @@ def test_cost_yoy_leaves_out_a_platform_without_both_years(tmp_path):
     r = metrics.cost_yoy(conn, prog, flt, metrics.yoy_funnel(conn, prog, flt, "2026-10-16"))
     assert not r["has"] and r["missing"][0]["why"] == "no spend uploaded for this year"
     conn.close()
+
+
+def test_meta_totals_row_is_not_counted_as_spend(tmp_path):
+    """Meta's raw report can open with a totals row (no month, whole period)
+    equal to all the monthly rows. Counting it doubled spend (2026-10-22)."""
+    import io
+    import openpyxl as _ox
+    wb = _ox.Workbook(); ws = wb.active
+    ws.append(["Month", "Campaign name", "Platform", "Amount spent (USD)", "Ad ID",
+               "Reporting starts", "Reporting ends"])
+    ws.append([None, None, None, 300.0, None, "2025-09-01", "2026-10-22"])
+    ws.append(["2026-10-01 - 2026-10-22", "c", "instagram", 100.0, "1", "2026-10-01", "2026-10-22"])
+    ws.append(["2025-09-01 - 2025-09-30", "c", "facebook", 200.0, "2", "2025-09-01", "2025-09-30"])
+    buf = io.BytesIO(); wb.save(buf); buf.seek(0)
+    rows, meta = spend.parse(buf, spend.META, "meta.xlsx")
+    assert sum(r["cost"] for r in rows) == 300.0
+    assert all(r["month"] for r in rows)
+    assert meta["period_end"] == "2026-10-22" and meta["period_start"] == "2025-09-01"
+    assert any("totals row" in w for w in meta["warnings"])
+    # An undated lump already stored is dropped by the next dated upload.
+    conn = db.connect(str(tmp_path / "t.db"))
+    conn.execute("INSERT INTO spend (program, platform, month, channel, sub_source, campaign,"
+                 " ad_id, cost, clicks, impressions) VALUES"
+                 " ('ft','meta','','Meta Paid Social (IG/FB)','Instagram','','',999,0,0)")
+    spend.store(conn, "ft", rows, meta, "x")
+    assert conn.execute("SELECT SUM(cost) FROM spend").fetchone()[0] == 300.0
+    conn.close()

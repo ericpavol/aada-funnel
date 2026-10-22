@@ -262,8 +262,22 @@ def _migrate(conn):
     _backfill_degree(conn)
     _backfill_term_start(conn)
     _merge_relabelled_existing(conn)
+    _drop_undated_spend_beside_dated(conn)
     mark_clones(conn)
     conn.commit()
+
+
+def _drop_undated_spend_beside_dated(conn):
+    """Remove undated spend for any platform that also has monthly spend.
+
+    Those rows came from Meta's totals row (see spend.parse_meta), which
+    repeats the monthly rows and so doubled spend. A platform uploaded ONLY
+    without months keeps its undated rows -- that is all it has.
+    """
+    conn.execute(
+        "DELETE FROM spend WHERE month = '' AND EXISTS (SELECT 1 FROM spend d"
+        " WHERE d.program = spend.program AND d.platform = spend.platform"
+        " AND d.month <> '')")
 
 
 def _migrate_emphasis(conn):

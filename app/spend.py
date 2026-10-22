@@ -50,6 +50,7 @@ META_PLATFORM_SUB = {
     "audience_network": "Other Meta",
     "messenger": "Other Meta",
     "threads": "Other Meta",
+    "whatsapp": "Other Meta",
     "unknown": "Other Meta",
 }
 META_FALLBACK_SUB = "Other Meta"
@@ -260,11 +261,21 @@ def parse_meta(path_or_stream, filename="meta.xlsx"):
 
     rows, unknown_plats = [], set()
     period_start = period_end = ""
+    # Meta's "Raw Data Report" can carry a TOTALS row: no month, no ad, the
+    # whole reporting period, and a cost equal to every row below it added up.
+    # Read as spend it doubles the total (2026-10-22: $160,848 counted twice).
+    # When the file is split by month, a row without a month is that summary.
+    by_month = i_month is not None and any(
+        _s(l[i_month]) for l in table[1:] if len(l) > i_month)
+    skipped_total = 0.0
     for line in table[1:]:
         if len(line) <= i_cost:
             continue
         cost = _num(line[i_cost])
         if not cost:
+            continue
+        if by_month and not _s(line[i_month]):
+            skipped_total += cost
             continue
         plat = _s(line[i_plat]).lower()
         sub = META_PLATFORM_SUB.get(plat)
@@ -272,10 +283,12 @@ def parse_meta(path_or_stream, filename="meta.xlsx"):
             sub = META_FALLBACK_SUB
             if plat:
                 unknown_plats.add(plat)
-        if i_from is not None and not period_start:
-            period_start = _iso(line[i_from])
-        if i_to is not None:
-            period_end = _iso(line[i_to]) or period_end
+        # Earliest start and LATEST end -- rows are not in date order, so
+        # "the last row's end" was often a month before the real end.
+        if i_from is not None and _iso(line[i_from]):
+            period_start = min(filter(None, (period_start, _iso(line[i_from]))))
+        if i_to is not None and _iso(line[i_to]):
+            period_end = max(period_end, _iso(line[i_to]))
         rows.append({
             "platform": META,
             "month": _month(line[i_month]) if i_month is not None else "",
@@ -287,8 +300,13 @@ def parse_meta(path_or_stream, filename="meta.xlsx"):
             "clicks": int(_num(line[i_clicks])) if i_clicks is not None else 0,
             "impressions": int(_num(line[i_impr])) if i_impr is not None else 0,
         })
-    return rows, _meta(rows, filename, META, period_start, period_end,
-                       unknown_plats, "platform")
+    meta = _meta(rows, filename, META, period_start, period_end,
+                 unknown_plats, "platform")
+    if skipped_total:
+        meta["warnings"].append(
+            "Skipped a totals row with no month ($%s) -- it repeats the months "
+            "below it." % format(skipped_total, ",.2f"))
+    return rows, meta
 
 
 def _meta(rows, filename, platform, period_start, period_end, unknown, what):
@@ -354,6 +372,10 @@ def store(conn, program, rows, meta, sha256=""):
     upload_id = cur.lastrowid
 
     months = sorted({r["month"] for r in rows})
+    if any(months):
+        # A dated upload supersedes any undated lump for this platform, which
+        # would otherwise sit on top of every period forever.
+        months = sorted(set(months) | {""})
     replaced = 0
     for m in months:
         cur.execute(
