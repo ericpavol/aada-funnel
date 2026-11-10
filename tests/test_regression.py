@@ -2825,3 +2825,11 @@ def test_meta_totals_row_is_not_counted_as_spend(tmp_path):
     spend.store(conn, "ft", rows, meta, "x")
     assert conn.execute("SELECT SUM(cost) FROM spend").fetchone()[0] == 300.0
     conn.close()
+
+
+def test_slate_2026_11_term_labels_fold_into_the_existing_ones():
+    # Slate relabelled terms in the 2026-11-10 export.
+    assert programs.canonical_term("Spring 2027 (January)") == "January 2027 (Spring)"
+    assert programs.canonical_term("Fall 2027 (August)") == "Fall 2027"
+    assert programs.canonical_term("Fall 2025 (August 2025)") == "Fall 2025 (August 2025)"
+    assert programs.term_start(programs.canonical_term("Fall 2027 (August)")) == "2027-08-01"

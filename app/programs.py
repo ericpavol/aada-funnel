@@ -64,6 +64,9 @@ def _ft_enrolled(row, idx):
 # Canonical form is the NEW naming, since that is where AADA is heading.
 _WINTER_RE = re.compile(r"^winter\s+(\d{4})\s*\(january\s+(\d{4})\)$", re.I)
 _SPRING_RE = re.compile(r"^january\s+(\d{4})\s*\(spring\)$", re.I)
+# Slate's 2026-11 relabel: "Spring 2027 (January)" and "Fall 2027 (August)".
+_SPRING_JAN_RE = re.compile(r"^spring\s+(\d{4})\s*\(january\)$", re.I)
+_FALL_AUG_RE = re.compile(r"^fall\s+(\d{4})\s*\(august\)$", re.I)
 
 
 def canonical_term(term):
@@ -83,6 +86,12 @@ def canonical_term(term):
         return "January %s (Spring)" % m.group(2)
     if _SPRING_RE.match(t):
         return "January %s (Spring)" % _SPRING_RE.match(t).group(1)
+    m = _SPRING_JAN_RE.match(t)
+    if m:
+        return "January %s (Spring)" % m.group(1)
+    m = _FALL_AUG_RE.match(t)
+    if m:
+        return "Fall %s" % m.group(1)
     return t
 
 
