@@ -1,7 +1,12 @@
 {% extends "base.html" %}
 {% macro gap_note(fy, s) -%}
+{% if fy.note -%}
 <p><b>Assumption:</b> {{ fy.note }} Walk-in applicants skip the usual audition request, so their submitted date is the best stand-in. Last year is treated the same way.</p>
-{% if fy.dated != s.n -%}
+{%- endif %}
+{% if fy.gap and not fy.note -%}
+<p><b>Why two numbers?</b> Slate marks {{ s.n|num }} people as reaching {{ s.label }} this year, but {{ (s.n - fy.dated)|num }} of them have no {{ s.label }} date in Slate. A comparison by date can only use the {{ fy.dated|num }} who have one.</p>
+<p><b>Last year</b>, <b>Change</b> and <b>Conv. change</b>, and the pace chart below, use those {{ fy.dated|num }} ({{ fy.dated_pct|pct }}) against {{ fy.prior|num }} ({{ fy.prior_pct|pct }}) last year. The big number ({{ s.n|num }}) is the real headcount.</p>
+{%- elif fy.dated != s.n -%}
 <p>{{ (s.n - fy.dated)|num }} of this year's {{ s.n|num }} have neither date, so <b>Last year</b>, <b>Change</b> and <b>Conv. change</b> count only the {{ fy.dated|num }} with one, on both sides: {{ fy.dated|num }} ({{ fy.dated_pct|pct }}) this year vs {{ fy.prior|num }} ({{ fy.prior_pct|pct }}) last year. The big number ({{ s.n|num }}, {{ s.pct_of_started|pct }}) is the real headcount.</p>
 {%- endif %}
 {%- endmacro %}
@@ -150,6 +155,8 @@
             {{ s.label }}
             {% if fy and fy.note %}
               <span class="tip tip-warn" tabindex="0" role="note" aria-label="Why this stage's numbers differ">⚠<span class="tip-pop">{{ gap_note(fy, s) }}</span></span>
+            {% elif fy and fy.gap %}
+              <span class="tip" tabindex="0" role="note" aria-label="Why this stage's numbers differ">i<span class="tip-pop">{{ gap_note(fy, s) }}</span></span>
             {% endif %}
           </div>
           {% if overall_split %}
@@ -352,6 +359,9 @@
           <div class="yoystat" data-ysblock="{{ key }}"{{ '' if key == yoy.stage else ' hidden' }}>
             <span class="eyebrow">Pace · cumulative {{ st.label|lower }}</span>
             {% if st.note %}<span class="stage-warn-line">⚠ {{ st.note }}</span>{% endif %}
+            {% if st.headcount is not none and st.pace.current_final < st.headcount and key not in ('started', 'enrolled') %}
+              <span class="hint">{{ (st.headcount - st.pace.current_final)|num }} of the {{ st.headcount|num }} who reached {{ st.label }} have no date in Slate, so they are not on this chart.</span>
+            {% endif %}
             <span class="ystat">
               <b>{{ st.pace.current_final|num }}</b>
               <span class="pale">vs {{ st.pace.prior_final|num }}</span>

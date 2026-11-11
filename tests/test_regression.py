@@ -2833,3 +2833,16 @@ def test_slate_2026_11_term_labels_fold_into_the_existing_ones():
     assert programs.canonical_term("Fall 2027 (August)") == "Fall 2027"
     assert programs.canonical_term("Fall 2025 (August 2025)") == "Fall 2025 (August 2025)"
     assert programs.term_start(programs.canonical_term("Fall 2027 (August)")) == "2027-08-01"
+
+
+def test_all_time_and_fiscal_year_links_drop_an_explicit_range():
+    """Nav links carry date_from/date_to; an explicit range beats `dates`, so
+    'All time' kept the old range and did nothing (2026-11-11)."""
+    from starlette.requests import Request
+    from app import main
+    req = Request({"type": "http", "path": "/", "query_string":
+                   b"program=ft&date_field=started_date&date_from=2026-09-01&date_to=2027-08-31",
+                   "headers": []})
+    qs = main._qs_set(req, "dates", "all")
+    assert "dates=all" in qs and "date_from" not in qs and "date_to" not in qs
+    assert "date_from" not in main._qs_set(req, "dates", None)

@@ -119,6 +119,13 @@ def _qs_set(request, key, value):
     cannot name its param at the call site. `None` drops the key entirely, so
     selecting a control's default leaves a clean URL.
     """
+    if key == "dates":
+        # A fiscal-year / "All time" pick replaces any explicit range. The
+        # nav links carry date_from/date_to, and from_query lets an explicit
+        # range win, so leaving them in made "All time" a silent no-op
+        # (Eric, 2026-11-11).
+        return _qs_with(request, dates=value, date_field=None, date_from=None,
+                        date_to=None)
     return _qs_with(request, **{key: value})
 
 
@@ -485,6 +492,7 @@ def overview(request: Request):
                 nou = chans[-1]
                 yoy["by_stage"][key] = {
                     "label": program.stage_labels[key], "pace": pace,
+                    "headcount": overall["counts"].get(key),
                     "note": program.stage_date_notes.get(key),
                     "channels": chans, "stage_row": row,
                     "untracked_share": (
@@ -763,13 +771,22 @@ def overview(request: Request):
                 # either side. Its flag count beside it is still the real
                 # headcount; the warning says the two differ and why.
                 note = r.get("note")
-                cur_n = r["current"] if note else st["n"]
-                cpct = (cur_n / cbase if cbase else None) if note else st["pct_of_started"]
+                # Slate also leaves the date blank for some people it marks as
+                # reaching a stage (2026-11: 9 of 83 Audition Complete, 6 of 53
+                # Admitted). Same treatment, flagged with an info icon. Not for
+                # Enrolled: its "date" is the term start, a different thing.
+                gap = (r["comparable"] and st["key"] not in ("started", "enrolled")
+                       and r["current"] < st["n"])
+                dated_mode = bool(note or gap)
+                cur_n = r["current"] if dated_mode else st["n"]
+                cpct = ((cur_n / cbase if cbase else None) if dated_mode
+                        else st["pct_of_started"])
                 funnel_yoy["rows"][st["key"]] = {
                     "prior": r["prior"], "prior_pct": ppct,
                     "comparable": r["comparable"],
-                    "note": note, "dated": r["current"] if note else None,
-                    "dated_pct": cpct if note else None,
+                    "note": note, "gap": gap,
+                    "dated": r["current"] if dated_mode else None,
+                    "dated_pct": cpct if dated_mode else None,
                     # Change in the NUMBER of people, alongside the change in
                     # conversion below -- the two answer different questions
                     # (more people vs. a larger share of them getting through).
