@@ -1905,15 +1905,18 @@
   /** Overview card: cost per stage by channel, expanding to sub-sources. */
   function costChart(payload, stage, attr, prior) {
     COST.payload = payload;
-    // {stage: {channel: last year's cost per stage}} from metrics.cost_yoy.
-    // First touch only, so it is drawn only under the first-touch lens.
-    COST.prior = prior ? prior.per : null;
-    COST.priorN = prior ? prior.n : null;
+    // {lens: {per: {stage: {channel: last year's cost}}, n: {...}}} from
+    // metrics.cost_yoy -- one set per "Credit to" option.
+    COST.priorBy = prior || null;
     COST.stage = stage;
     COST.attr = attr || "first";
     drawCost();
     wireCostChips();
     wireAttrChips(drawCost);
+  }
+
+  function priorFor() {
+    return COST.priorBy && COST.priorBy[COST.attr] ? COST.priorBy[COST.attr] : null;
   }
 
   function costStage() {
@@ -1961,17 +1964,17 @@
         hidden_subs: 0
       };
     }), {
-      seriesLabel: COST.prior && COST.attr === "first" ? "This year"
-        : "cost per " + st.label.toLowerCase(),
+      seriesLabel: priorFor() ? "This year" : "cost per " + st.label.toLowerCase(),
       priorLabel: "Last year, same point",
-      prior: COST.prior && COST.attr === "first" ? function (f) {
-        var p = COST.prior[COST.stage];
+      prior: priorFor() ? function (f) {
+        var p = priorFor().per[COST.stage];
         return (!f.isSub && p && p[f.row.channel] != null) ? p[f.row.channel] : null;
       } : null,
       priorTooltip: function (f, v) {
-        var p = (COST.priorN || {})[COST.stage] || {};
+        var p = (priorFor() || {n: {}}).n[COST.stage] || {};
         return [money(v) + " per " + st.label.toLowerCase() + " last year, same point",
-                numFmt(p[f.row.channel] || 0) + " reached " + st.label + " (first touch)"];
+                numFmt(p[f.row.channel] || 0) + " reached " + st.label +
+                  ({first: " (first touch)", last: " (last touch)", any: " (any touch)"}[COST.attr] || "")];
       },
       value: function (r) { return r.rate; },
       baseline: st.per || null,
@@ -1992,7 +1995,8 @@
   function paintCostText(st) {
     // Year-over-year rows: one set per stage, shown for the picked one.
     document.querySelectorAll("[data-cyoy]").forEach(function (n) {
-      n.hidden = n.getAttribute("data-cyoy") !== COST.stage;
+      n.hidden = n.getAttribute("data-cyoy") !== COST.stage ||
+        n.getAttribute("data-cyoa") !== COST.attr;
     });
     document.querySelectorAll("[data-coststagelow]").forEach(function (n) {
       n.textContent = st.label.toLowerCase();

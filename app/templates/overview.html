@@ -571,7 +571,7 @@
         <div class="costyoy-head">
           <span class="eyebrow">vs last year · same point</span>
           {{ tip([
-            'This year so far against the same days last year. People: started in each window and reached the stage by its last day, credited by <b>first touch</b> (this block stays first touch whichever “Credit to” is picked).',
+            'This year so far against the same days last year. People: started in each window and reached the stage by its last day, credited the same way as the chart: whichever “Credit to” is picked. With <b>Any touch</b> a person counts for every paid channel they touched, so the channel rows overlap; the “Per …” total counts each person once.',
             ('Spend comes by the month. ' ~ (('Last year&#39;s ' ~ cost_yoy.prorate.month ~ ' is an <b>estimate</b>: ' ~ cost_yoy.prorate.days ~ ' of its ' ~ cost_yoy.prorate.of ~ ' days, matching how far this year&#39;s spend export runs (' ~ cost_yoy.through ~ '). It assumes spend was even across that month.') if cost_yoy.prorate else 'Every month here is complete in both years.')),
             'People are counted through ' ~ (cost_yoy.people_through or '—') ~ ' (the Slate export). Lower cost per stage is green.',
           ]) }}
@@ -588,21 +588,25 @@
               <tr><td>Paid media</td><td>{{ money(b.cur_cost) }}</td>
                 <td>{{ money(b.prior_cost) }}{% if cost_yoy.prorate %}<sup title="Includes an estimated part-month">*</sup>{% endif %}</td>
                 <td>{{ chg(b.cur_cost, b.prior_cost, false) }}</td></tr>
+              {% for a in ('first', 'last', 'any') %}
+              {% set va = cost_yoy.by_attr[a] %}
               {% for k in cost_stage_opts %}
-                {% set st = b.stages[k] %}
-                <tr data-cyoy="{{ k }}"{{ '' if k == cost_stage else ' hidden' }}>
+                {% set st = va.blended.stages[k] %}
+                {% set show = k == cost_stage and a == cost_attr %}
+                <tr data-cyoy="{{ k }}" data-cyoa="{{ a }}"{{ '' if show else ' hidden' }}>
                   <td><b>Per {{ program.stage_labels[k]|lower }}</b></td>
                   <td><b>{{ money(st.cur_per) }}</b> <small>{{ st.cur_n|num }}</small></td>
                   <td>{{ money(st.prior_per) }} <small>{{ st.prior_n|num }}</small></td>
                   <td>{{ chg(st.cur_per, st.prior_per) }}</td></tr>
-                {% for r in cost_yoy.rows %}
+                {% for r in va.rows %}
                   {% set cs = r.stages[k] %}
-                  <tr class="sub" data-cyoy="{{ k }}"{{ '' if k == cost_stage else ' hidden' }}>
+                  <tr class="sub" data-cyoy="{{ k }}" data-cyoa="{{ a }}"{{ '' if show else ' hidden' }}>
                     <td>{{ r.name }}</td>
                     <td>{{ money(cs.cur_per) }} <small>{{ cs.cur_n|num }}</small></td>
                     <td>{{ money(cs.prior_per) }} <small>{{ cs.prior_n|num }}</small></td>
                     <td>{{ chg(cs.cur_per, cs.prior_per) }}</td></tr>
                 {% endfor %}
+              {% endfor %}
               {% endfor %}
             </tbody>
           </table>
@@ -842,7 +846,7 @@
   AADA.wireTimelineControls({{ tl_client|tojson }});
   {% if cost.has_spend %}AADA.costChart({{ cost_payload|tojson }}, {{ cost_stage|tojson }},
                                        {{ cost_attr|tojson }},
-                                       {{ (cost_yoy.chart if cost_yoy and cost_yoy.has else none)|tojson }});{% endif %}
+                                       {{ (cost_yoy.charts if cost_yoy and cost_yoy.has else none)|tojson }});{% endif %}
   AADA.wireStagePicks({{ stage_payload|tojson }},
                       {"cvs": {{ cmp_stage|tojson }}, "mvs": {{ mk_stage|tojson }}},
                       {{ program.channel_stage|tojson }});

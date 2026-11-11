@@ -1719,38 +1719,61 @@ def cost_yoy(conn, program, flt, yoy):
         chans[channel] = {"channel": channel, "cur_cost": c_cost, "prior_cost": p_cost,
                           "through": end, "prior_through": p_end}
 
+    lenses = ("first", "last", "any")
+
     def reached(lo, hi):
-        """{channel: {stage: n}} by first touch, for the cohort started in [lo, hi]."""
+        """{lens: {channel: {stage: n}}} plus {lens: {"_all": {stage: n}}}, for
+        the cohort started in [lo, hi].
+
+        first/last: the channel of the person's first/last ping -- one channel
+        each, so channel rows sum. any: every paid channel they touched -- rows
+        overlap, so the blended "_all" is a union (each person once).
+        """
         ids = [r[0] for r in conn.execute(
             "SELECT id FROM applicants WHERE " + base.where +
             " AND started_date<>'' AND started_date>=? AND started_date<=?",
             list(base.params) + [lo, hi])]
+        out = {l: defaultdict(lambda: defaultdict(int)) for l in lenses}
         if not ids:
-            return {}
-        first = {}
+            return out
+        seq = defaultdict(list)
         for chunk in range(0, len(ids), 900):
             part = ids[chunk:chunk + 900]
             for r in conn.execute(
                     "SELECT applicant_id, channel FROM pings WHERE applicant_id IN (%s)"
                     " ORDER BY applicant_id, CASE WHEN ts='' THEN 1 ELSE 0 END, ts, seq"
                     % ",".join("?" * len(part)), part):
-                first.setdefault(r[0], r[1])
-        want = [i for i in ids if first.get(i) in chans]
-        out = defaultdict(lambda: defaultdict(int))
+                seq[r[0]].append(r[1])
+        credit = {}
+        for i in ids:
+            p = seq.get(i)
+            if not p:
+                continue
+            c = {"first": {p[0]} & set(chans), "last": {p[-1]} & set(chans),
+                 "any": set(p) & set(chans)}
+            if any(c.values()):
+                credit[i] = c
+        want = list(credit)
+        cols = []
+        for k in program.stage_keys:
+            dc = program.stage_dates.get(k)
+            cols.append("(st_%s=1 AND %s<>'' AND %s<=?)" % (k, dc, dc) if dc
+                        else "(st_%s=1)" % k)
         for chunk in range(0, len(want), 900):
             part = want[chunk:chunk + 900]
-            cols = []
-            for k in program.stage_keys:
-                dc = program.stage_dates.get(k)
-                cols.append("(st_%s=1 AND %s<>'' AND %s<=?)" % (k, dc, dc) if dc
-                            else "(st_%s=1)" % k)
             sql = ("SELECT id, %s FROM applicants WHERE id IN (%s)"
                    % (", ".join(cols), ",".join("?" * len(part))))
             prm = [hi for k in program.stage_keys if program.stage_dates.get(k)] + part
             for r in conn.execute(sql, prm):
-                ch = first[r[0]]
-                for j, k in enumerate(program.stage_keys):
-                    out[ch][k] += 1 if r[j + 1] else 0
+                for lens in lenses:
+                    got = credit[r[0]][lens]
+                    for j, k in enumerate(program.stage_keys):
+                        if not r[j + 1]:
+                            continue
+                        for ch in got:
+                            out[lens][ch][k] += 1
+                        if got:
+                            out[lens]["_all"][k] += 1
         return out
 
     c_n, p_n = reached(*cur), reached(*prior)
@@ -1768,22 +1791,25 @@ def cost_yoy(conn, program, flt, yoy):
         return {"name": name, "cur_cost": cc, "prior_cost": pc,
                 "cost_delta": (cc - pc) / pc if pc else None, "stages": stages}
 
-    rows = [row(ch, v["cur_cost"], v["prior_cost"], c_n.get(ch, {}), p_n.get(ch, {}))
-            for ch, v in sorted(chans.items(), key=lambda kv: -kv[1]["cur_cost"])]
-    tot_c = defaultdict(int)
-    tot_p = defaultdict(int)
-    for ch in chans:
-        for k in program.stage_keys:
-            tot_c[k] += c_n.get(ch, {}).get(k, 0)
-            tot_p[k] += p_n.get(ch, {}).get(k, 0)
-    blended = row("All paid", sum(v["cur_cost"] for v in chans.values()),
-                  sum(v["prior_cost"] for v in chans.values()), tot_c, tot_p)
-    # Last year's bars for the cost chart: per stage, per channel.
-    chart = {"per": {k: {r["name"]: r["stages"][k]["prior_per"] for r in rows}
-                     for k in program.stage_keys},
-             "n": {k: {r["name"]: r["stages"][k]["prior_n"] for r in rows}
-                   for k in program.stage_keys}}
-    return {"rows": rows, "blended": blended, "missing": missing, "prorate": prorate,
-            "chart": chart,
+    order = sorted(chans.items(), key=lambda kv: -kv[1]["cur_cost"])
+    by_attr = {}
+    for lens in lenses:
+        rows = [row(ch, v["cur_cost"], v["prior_cost"], c_n[lens].get(ch, {}),
+                    p_n[lens].get(ch, {})) for ch, v in order]
+        # "_all" counts each person once, so it is right for every lens (for
+        # first/last it equals the sum of the channel rows).
+        blended = row("All paid", sum(v["cur_cost"] for v in chans.values()),
+                      sum(v["prior_cost"] for v in chans.values()),
+                      c_n[lens].get("_all", {}), p_n[lens].get("_all", {}))
+        # Last year's bars for the cost chart: per stage, per channel.
+        chart = {"per": {k: {r["name"]: r["stages"][k]["prior_per"] for r in rows}
+                         for k in program.stage_keys},
+                 "n": {k: {r["name"]: r["stages"][k]["prior_n"] for r in rows}
+                       for k in program.stage_keys}}
+        by_attr[lens] = {"rows": rows, "blended": blended, "chart": chart}
+    first = by_attr["first"]
+    return {"rows": first["rows"], "blended": first["blended"], "chart": first["chart"],
+            "by_attr": by_attr, "charts": {l: v["chart"] for l, v in by_attr.items()},
+            "missing": missing, "prorate": prorate,
             "through": max((v["through"] for v in chans.values()), default=None),
             "people_through": yoy.get("as_of"), "has": bool(chans)}
